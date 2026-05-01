@@ -1,0 +1,12 @@
+fastapi
+uvicorn
+pydantic
+pydantic-settings
+supabase
+python-dotenv
+celery
+redis
+python-multipart
+python-magic-bin
+email-validator
+duckdb

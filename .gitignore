@@ -1,0 +1,45 @@
+# Dependencies
+**/node_modules
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/*.pyd
+**/.pytest_cache
+**/.venv
+**/env
+**/venv
+**/ENV
+**/env.bak
+**/venv.bak
+
+# Next.js
+frontend/.next/
+frontend/out/
+frontend/build/
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.env
+
+# OS Files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Temp files
+~$*
+*.tmp
+*.bak
+
+# Backend specific
+backend/.env
+backend/*.db
+backend/*.sqlite3
+
+# Agent related
+.agents/
+.gemini/
