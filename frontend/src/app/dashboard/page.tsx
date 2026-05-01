@@ -13,17 +13,79 @@ import FinancialTrendsChart from "../../components/analytics/FinancialTrendsChar
 import YoYComparativeChart from "../../components/analytics/YoYComparativeChart";
 import ProfitabilityChart from "../../components/analytics/ProfitabilityChart";
 import TypesBreakdownChart from "../../components/analytics/TypesBreakdownChart";
-import { BarChart3, Receipt, Users2 } from "lucide-react";
+import LegalAnnexesTab from "../../components/analytics/LegalAnnexesTab";
+import { BarChart3, Receipt, Users2, LayoutDashboard, Table } from "lucide-react";
 
 export default function DashboardPage() {
     const [activeTab, setActiveTab] = useState<'segments' | 'tax'>('segments');
+    const [taxSubTab, setTaxSubTab] = useState<'summary' | 'annexes'>('summary');
     const [segmentData, setSegmentData] = useState<{ summary: any[]; data: any[] } | null>(null);
-    const [monthlyCustomers, setMonthlyCustomers] = useState<any[]>([]);
-    const [taxData, setTaxData] = useState<{ liquidation: any, topEntities: any, health: any } | null>(null);
-    const [trendsData, setTrendsData] = useState<any[]>([]);
-    const [typesData, setTypesData] = useState<{ ventas: any[], gastos: any[] } | null>(null);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState("");
+                {/* Contenido del Tab */}
+                {activeTab === 'segments' ? (
+                    [...segments content...]
+                ) : (
+                    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
+                        {/* Sub-Tabs para Gestión Tributaria */}
+                        <div className="flex gap-4 border-b border-slate-800/50 pb-4">
+                            <button 
+                                onClick={() => setTaxSubTab('summary')}
+                                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${taxSubTab === 'summary' ? 'text-cyan-400 border-b-2 border-cyan-400 bg-cyan-400/5' : 'text-slate-500 hover:text-slate-300'}`}
+                            >
+                                <LayoutDashboard size={16} />
+                                Resumen Ejecutivo
+                            </button>
+                            <button 
+                                onClick={() => setTaxSubTab('annexes')}
+                                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${taxSubTab === 'annexes' ? 'text-cyan-400 border-b-2 border-cyan-400 bg-cyan-400/5' : 'text-slate-500 hover:text-slate-300'}`}
+                            >
+                                <Table size={16} />
+                                Anexos Detallados (F07)
+                            </button>
+                        </div>
+
+                        {taxSubTab === 'summary' ? (
+                            <>
+                                {/* Fila 1: Liquidación y Salud */}
+                                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                                    <div className="lg:col-span-2">
+                                        <TaxLiquidationCard data={taxData?.liquidation} />
+                                    </div>
+                                    <div className="lg:col-span-1">
+                                        <DocumentHealthBadge data={taxData?.health} />
+                                    </div>
+                                </div>
+
+                                {/* Fila 2: Composición de Operaciones */}
+                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                                    <div className="bg-slate-900/40 backdrop-blur-md rounded-3xl p-8 shadow-2xl border border-slate-800/50">
+                                        <h2 className="text-xl font-bold mb-8 text-slate-200">Desglose de Ventas por Tipo</h2>
+                                        <div className="h-72 w-full">
+                                            <TypesBreakdownChart data={typesData?.ventas || []} type="ventas" />
+                                        </div>
+                                    </div>
+                                    <div className="bg-slate-900/40 backdrop-blur-md rounded-3xl p-8 shadow-2xl border border-slate-800/50">
+                                        <h2 className="text-xl font-bold mb-8 text-slate-200">Estructura de Gastos y Compras</h2>
+                                        <div className="h-72 w-full">
+                                            <TypesBreakdownChart data={typesData?.gastos || []} type="gastos" />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Fila 3: Top Entidades */}
+                                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                                    <div className="lg:col-span-1">
+                                        <TopEntitiesChart title="Top 5 Clientes" data={taxData?.topEntities?.top_clients || []} color="#10b981" />
+                                    </div>
+                                    <div className="lg:col-span-2">
+                                        <TopEntitiesChart title="Top 5 Proveedores" data={taxData?.topEntities?.top_suppliers || []} color="#06b6d4" />
+                                    </div>
+                                </div>
+                            </>
+                        ) : (
+                            <LegalAnnexesTab />
+                        )}
+                    </div>
+                )}
 
     useEffect(() => {
         const fetchAnalytics = async () => {

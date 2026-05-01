@@ -544,3 +544,134 @@ def get_payroll_summary(
         return {"status": "success", "data": data}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error en análisis de nómina: {str(e)}")
+
+@router.get("/tax-summary/annexes/ventas")
+def get_ventas_annex(
+    user_data: dict = Depends(require_cliente),
+    duck_con = Depends(get_duckdb_client)
+):
+    """
+    Retorna los datos para el Anexo 1 (Ventas a Contribuyentes) y Anexo 2 (Consumidor Final)
+    formateados según el requerimiento de Stitch y Hacienda.
+    """
+    tenant_id = user_data.get("tenant_id")
+    if not tenant_id:
+        raise HTTPException(status_code=400, detail="Tenant ID no encontrado")
+
+    query = """
+        WITH latest_month AS (
+            SELECT MAX(date_trunc('month', transaction_date)) as max_month
+            FROM pg.financial_records
+            WHERE tenant_id = ? AND status = 'Valido'
+        )
+        SELECT 
+            CAST(transaction_date AS VARCHAR) as fecha,
+            transaction_type,
+            document_type as tipo_doc,
+            nit_dui as numero, -- En consumidor final nit_dui guarda el rango
+            nit_dui,
+            customer_name as nombre,
+            0.0 as exento, -- Por ahora 0, se puede expandir el seeder luego
+            amount as gravado,
+            iva_amount as iva,
+            (amount + iva_amount) as total
+        FROM pg.financial_records
+        WHERE tenant_id = ? 
+          AND status = 'Valido'
+          AND transaction_type IN ('Ventas Contribuyente', 'Ventas Consumidor')
+          AND date_trunc('month', transaction_date) = (SELECT max_month FROM latest_month)
+        ORDER BY transaction_date DESC;
+    """
+    try:
+        results = duck_con.execute(query, [tenant_id, tenant_id]).fetchall()
+        columns = [desc[0] for desc in duck_con.description]
+        data = [dict(zip(columns, row)) for row in results]
+        return {"status": "success", "data": data}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error en anexo de ventas: {str(e)}")
+
+@router.get("/tax-summary/annexes/compras")
+def get_compras_annex(
+    user_data: dict = Depends(require_cliente),
+    duck_con = Depends(get_duckdb_client)
+):
+    """
+    Retorna los datos para el Anexo 4 (Compras) formateados según el requerimiento.
+    """
+    tenant_id = user_data.get("tenant_id")
+    if not tenant_id:
+        raise HTTPException(status_code=400, detail="Tenant ID no encontrado")
+
+    query = """
+        WITH latest_month AS (
+            SELECT MAX(date_trunc('month', transaction_date)) as max_month
+            FROM pg.financial_records
+            WHERE tenant_id = ? AND status = 'Valido'
+        )
+        SELECT 
+            CAST(transaction_date AS VARCHAR) as fecha,
+            'Compras' as transaction_type,
+            document_type as tipo_doc,
+            nit_dui,
+            customer_name as nombre,
+            0.0 as exento,
+            amount as gravado,
+            iva_amount as iva,
+            (amount + iva_amount) as total
+        FROM pg.financial_records
+        WHERE tenant_id = ? 
+          AND status = 'Valido'
+          AND transaction_type = 'Compras'
+          AND date_trunc('month', transaction_date) = (SELECT max_month FROM latest_month)
+        ORDER BY transaction_date DESC;
+    """
+    try:
+        results = duck_con.execute(query, [tenant_id, tenant_id]).fetchall()
+        columns = [desc[0] for desc in duck_con.description]
+        data = [dict(zip(columns, row)) for row in results]
+
+@router.get("/tax-summary/annexes/payroll")
+def get_payroll_annex(
+    user_data: dict = Depends(require_cliente),
+    duck_con = Depends(get_duckdb_client)
+):
+    """
+    Retorna los datos detallados para el Anexo de Renta (F14) - Nómina.
+    """
+    tenant_id = user_data.get("tenant_id")
+    if not tenant_id:
+        raise HTTPException(status_code=400, detail="Tenant ID no encontrado")
+
+    query = """
+        WITH latest_month AS (
+            SELECT MAX(date_trunc('month', transaction_date)) as max_month
+            FROM pg.financial_records
+            WHERE tenant_id = ? AND status = 'Valido'
+              AND transaction_type = 'Gastos Nomina'
+        )
+        SELECT 
+            CAST(transaction_date AS VARCHAR) as fecha,
+            'F14' as tipo_doc,
+            nit_dui as numero,
+            nit_dui,
+            customer_name as nombre,
+            0.0 as exento,
+            amount as gravado, -- Salario Bruto
+            afp_amount as afp,
+            isss_amount as isss,
+            retention_amount as isr,
+            (amount - afp_amount - isss_amount - retention_amount) as total -- Salario Neto
+        FROM pg.financial_records
+        WHERE tenant_id = ? 
+          AND status = 'Valido'
+          AND transaction_type = 'Gastos Nomina'
+          AND date_trunc('month', transaction_date) = (SELECT max_month FROM latest_month)
+        ORDER BY customer_name ASC;
+    """
+    try:
+        results = duck_con.execute(query, [tenant_id, tenant_id]).fetchall()
+        columns = [desc[0] for desc in duck_con.description]
+        data = [dict(zip(columns, row)) for row in results]
+        return {"status": "success", "data": data}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error en anexo de nómina: {str(e)}")
