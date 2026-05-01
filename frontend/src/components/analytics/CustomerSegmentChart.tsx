@@ -10,7 +10,13 @@ interface SegmentData {
 
 export default function CustomerSegmentChart({ data }: { data: SegmentData[] }) {
     if (!data || data.length === 0) {
-        return <div className="text-slate-500 text-sm font-medium flex items-center justify-center h-full animate-pulse">Analizando base de clientes...</div>;
+        return (
+            <div className="flex items-center justify-center h-full">
+                <p className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest animate-pulse">
+                    Analizando Cartera...
+                </p>
+            </div>
+        );
     }
 
     return (
@@ -20,40 +26,40 @@ export default function CustomerSegmentChart({ data }: { data: SegmentData[] }) 
                     data={data}
                     cx="50%"
                     cy="50%"
-                    innerRadius={65}
-                    outerRadius={95}
-                    paddingAngle={8}
+                    innerRadius={60}
+                    outerRadius={85}
+                    paddingAngle={4}
                     dataKey="value"
-                    stroke="none"
-                    cornerRadius={8}
+                    stroke="#ffffff"
+                    strokeWidth={2}
+                    cornerRadius={4}
                 >
                     {data.map((entry, index) => (
                         <Cell 
                             key={`cell-${index}`} 
                             fill={entry.color} 
-                            style={{ filter: `drop-shadow(0px 4px 6px ${entry.color}33)` }}
                         />
                     ))}
                 </Pie>
                 <Tooltip 
                     contentStyle={{ 
-                        backgroundColor: 'rgba(15, 23, 42, 0.95)', 
-                        backdropFilter: 'blur(12px)',
-                        borderColor: '#334155', 
-                        borderRadius: '1rem', 
-                        color: '#f8fafc',
-                        boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5)',
-                        border: '1px solid rgba(255,255,255,0.1)'
+                        backgroundColor: '#ffffff', 
+                        borderColor: 'var(--color-outline-variant)', 
+                        borderRadius: 'var(--radius-lg)', 
+                        boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)',
+                        fontSize: '12px',
+                        padding: '12px'
                     }}
-                    itemStyle={{ color: '#f8fafc', fontWeight: 600, fontSize: '12px' }}
+                    itemStyle={{ fontWeight: 700, color: 'var(--color-primary)' }}
                     cursor={{ fill: 'none' }}
                 />
                 <Legend 
                     verticalAlign="bottom" 
-                    height={40}
-                    iconType="circle"
+                    align="center"
+                    iconType="rect"
+                    iconSize={10}
                     formatter={(value) => (
-                        <span className="text-slate-400 font-bold text-[10px] uppercase tracking-widest ml-1">
+                        <span className="text-on-surface-variant font-bold text-[9px] uppercase tracking-wider ml-1">
                             {value}
                         </span>
                     )}
@@ -62,3 +68,4 @@ export default function CustomerSegmentChart({ data }: { data: SegmentData[] }) 
         </ResponsiveContainer>
     );
 }
+

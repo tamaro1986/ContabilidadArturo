@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
-from app.api.routes import auth, financial_data, analytics
+from app.api.routes import auth, financial_data, analytics, ai as ai_router
 import duckdb
 
 app = FastAPI(
@@ -39,6 +39,7 @@ def get_duckdb_client() -> duckdb.DuckDBPyConnection:
 app.include_router(auth.router, prefix=f"{settings.API_V1_STR}/auth", tags=["auth"])
 app.include_router(financial_data.router, prefix=f"{settings.API_V1_STR}/financial", tags=["financial"])
 app.include_router(analytics.router, prefix=f"{settings.API_V1_STR}/analytics", tags=["analytics"])
+app.include_router(ai_router.router, prefix=f"{settings.API_V1_STR}/ai", tags=["ai-anomalies"])
 
 @app.get("/")
 def root():

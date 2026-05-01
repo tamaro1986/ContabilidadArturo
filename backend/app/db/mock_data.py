@@ -127,6 +127,16 @@ def init_mock_duckdb(duck_con) -> None:
 
     # ── tenant_B y tenant_C: datos aleatorios ────────────────────────────────
     _insert_random(duck_con, ["tenant_B", "tenant_C"])
+
+    # ── Detección de anomalías automática (pre-calentado) ─────────────────────
+    try:
+        from app.services.anomaly_engine import run_anomaly_detection
+        for tenant in ["tenant_A", "tenant_B", "tenant_C"]:
+            summary = run_anomaly_detection(duck_con, tenant)
+            print(f"[ANOMALY] {tenant}: {summary['total_anomalous']} anomalías ({summary['anomaly_rate_pct']}%)")
+    except Exception as exc:
+        print(f"[ANOMALY] Error en detección automática: {exc}")
+
     print("--- MOCK MODE: DuckDB listo ---")
 
 

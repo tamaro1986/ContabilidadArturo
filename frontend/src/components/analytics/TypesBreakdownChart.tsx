@@ -53,14 +53,15 @@ export default function TypesBreakdownChart({ data, type }: { data: any[], type:
                     </Pie>
                     <Tooltip 
                         contentStyle={{ 
-                            backgroundColor: 'rgba(15, 23, 42, 0.9)', 
-                            backdropFilter: 'blur(12px)',
-                            borderColor: 'rgba(255,255,255,0.1)', 
-                            borderRadius: '1rem', 
-                            color: '#f8fafc',
-                            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5)',
+                            backgroundColor: 'var(--color-surface-container-lowest)', 
+                            borderColor: 'var(--color-outline-variant)', 
+                            borderRadius: '0.25rem', 
+                            color: 'var(--color-primary)',
+                            boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)',
+                            fontSize: '10px',
+                            fontWeight: 'bold'
                         }}
-                        itemStyle={{ fontWeight: 600, fontSize: '12px' }}
+                        itemStyle={{ fontWeight: 700 }}
                         formatter={(value: any) => [`$${value.toLocaleString()}`, "Monto"]}
                     />
                     <Legend 
@@ -77,8 +78,8 @@ export default function TypesBreakdownChart({ data, type }: { data: any[], type:
                             const { payload } = entry;
                             const percentage = ((payload.value / total) * 100).toFixed(0);
                             return (
-                                <span className="text-slate-400 text-xs font-medium inline-flex items-center gap-2">
-                                    <span className="text-slate-200 font-bold">{percentage}%</span>
+                                <span className="text-on-surface-variant text-[10px] font-bold uppercase tracking-tighter inline-flex items-center gap-2">
+                                    <span className="text-primary font-black font-tnum">{percentage}%</span>
                                     {value}
                                 </span>
                             );
