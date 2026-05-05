@@ -1,13 +1,14 @@
 import React from 'react';
+import { TaxLiquidation } from '@/types/analytics';
 
-export default function TaxLiquidationCard({ data }: { data: any }) {
-    if (!data) return <div className="text-slate-400">Cargando Liquidación...</div>;
+export default function TaxLiquidationCard({ data }: { data: TaxLiquidation | undefined }) {
+    if (!data) return <div className="text-on-surface-variant text-[10px] font-bold uppercase tracking-widest animate-pulse">Cargando Liquidación...</div>;
 
     const neto = data.neto || 0;
     const isCredit = neto < 0;
 
     return (
-        <div className="bg-white rounded-lg p-6 border border-outline-variant shadow-sm h-full flex flex-col transition-all hover:border-secondary/30">
+        <div className="bg-surface-container-lowest rounded-lg p-6 border border-outline-variant shadow-sm h-full flex flex-col transition-all hover:border-secondary/30">
             <h2 className="text-xs font-bold mb-6 text-primary uppercase tracking-[0.15em] flex items-center justify-between">
                 Liquidación de IVA 
                 <span className="text-[10px] font-medium text-on-surface-variant bg-surface-dim px-2 py-0.5 rounded tracking-normal normal-case">Período: {data.periodo || 'N/A'}</span>
@@ -28,7 +29,7 @@ export default function TaxLiquidationCard({ data }: { data: any }) {
                     <span className={`text-4xl font-black tracking-tight font-tnum ${isCredit ? 'text-secondary' : 'text-error'}`}>
                         ${Math.abs(neto).toFixed(2)}
                     </span>
-                    <span className={`px-4 py-1.5 rounded text-[10px] font-bold uppercase tracking-widest ${isCredit ? 'bg-secondary text-white' : 'bg-error text-white'}`}>
+                    <span className={`px-4 py-1.5 rounded text-[10px] font-bold uppercase tracking-widest ${isCredit ? 'bg-secondary text-on-secondary' : 'bg-error text-on-error'}`}>
                         {isCredit ? 'Remanente a favor' : 'Impuesto por pagar'}
                     </span>
                 </div>

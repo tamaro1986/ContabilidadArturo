@@ -41,6 +41,11 @@
   --color-error-container: #ffdad6;
   --color-on-error-container: #93000a;
 
+  --color-warning: #9e6c00;
+  --color-on-warning: #ffffff;
+  --color-warning-container: #ffdf9e;
+  --color-on-warning-container: #261900;
+
   /* Elevation & Radius Tokens */
   --radius-xs: 0.125rem;
   --radius-sm: 0.25rem;
@@ -77,10 +82,10 @@ body {
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: var(--color-outline-variant);
   border-radius: 10px;
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: var(--color-outline);
 }

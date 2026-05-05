@@ -3,5 +3,6 @@
     "python.analysis.extraPaths": [
         "./backend"
     ],
-    "python.terminal.activateEnvInSelectedTerminal": true
+    "python.terminal.activateEnvInSelectedTerminal": true,
+    "css.lint.unknownAtRules": "ignore"
 }

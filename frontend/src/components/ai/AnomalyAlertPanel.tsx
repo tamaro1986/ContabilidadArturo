@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -44,21 +44,21 @@ const fmt = (n: number) =>
 
 const RISK_CONFIG = {
   ALTO: {
-    badge: "bg-red-100 text-red-800 border border-red-200",
-    dot: "bg-red-500",
-    ring: "ring-red-200",
+    badge: "bg-error/10 text-error border border-error/20",
+    dot: "bg-error",
+    ring: "ring-error/20",
     label: "Riesgo Alto",
   },
   MEDIO: {
-    badge: "bg-amber-100 text-amber-800 border border-amber-200",
-    dot: "bg-amber-400",
-    ring: "ring-amber-200",
+    badge: "bg-warning-container text-on-warning-container border border-warning/20",
+    dot: "bg-warning",
+    ring: "ring-warning/20",
     label: "Riesgo Medio",
   },
   BAJO: {
-    badge: "bg-sky-100 text-sky-800 border border-sky-200",
-    dot: "bg-sky-400",
-    ring: "ring-sky-200",
+    badge: "bg-surface-container text-primary border border-outline-variant",
+    dot: "bg-primary",
+    ring: "ring-primary/10",
     label: "Riesgo Bajo",
   },
 } as const;
@@ -112,10 +112,10 @@ function RiskBadge({ level }: { level: "ALTO" | "MEDIO" | "BAJO" }) {
 
 function SummaryKPI({ label, value, sub }: { label: string; value: string | number; sub?: string }) {
   return (
-    <div className="flex flex-col gap-0.5 p-4 bg-white rounded-lg border border-[#dce9ff]">
-      <span className="text-[11px] font-semibold uppercase tracking-wider text-[#44474e]">{label}</span>
-      <span className="text-2xl font-bold font-mono tabular-nums text-[#031636]">{value}</span>
-      {sub && <span className="text-[11px] text-[#75777f]">{sub}</span>}
+    <div className="flex flex-col gap-0.5 p-4 bg-surface-container-lowest rounded-lg border border-outline-variant shadow-sm transition-all hover:border-secondary/30">
+      <span className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">{label}</span>
+      <span className="text-2xl font-black text-primary tracking-tight font-tnum">{value}</span>
+      {sub && <span className="text-[10px] text-outline font-medium">{sub}</span>}
     </div>
   );
 }
@@ -133,41 +133,43 @@ function AnomalyCard({
 
   return (
     <div
-      className={`rounded-lg border bg-white transition-all duration-200 overflow-hidden
-        ring-1 ${expanded ? cfg.ring : "ring-transparent"} border-[#dce9ff] hover:border-[#8293ba]`}
+      className={`rounded-lg border bg-surface-container-lowest transition-all duration-200 overflow-hidden
+        ${expanded ? `ring-2 ${cfg.ring} ring-offset-1` : "border-surface-container-high"} hover:border-primary/30 shadow-sm`}
     >
       {/* Card Header — always visible */}
       <button
         onClick={onToggle}
-        className="w-full text-left flex items-start gap-3 px-4 py-3 hover:bg-[#eff4ff] transition-colors"
+        className="w-full text-left flex items-start gap-4 px-5 py-4 hover:bg-surface-container-low transition-colors"
       >
-        {/* Risk dot */}
-        <div className={`mt-0.5 w-2.5 h-2.5 rounded-full flex-shrink-0 ${cfg.dot}`} />
+        {/* Risk indicator bar */}
+        <div className={`mt-1.5 w-1 h-8 rounded-full shrink-0 ${cfg.dot}`} />
 
         <div className="flex-1 min-w-0">
-          <div className="flex items-center justify-between gap-2 flex-wrap">
-            <span className="font-semibold text-sm text-[#0b1c30] truncate">
+          <div className="flex items-center justify-between gap-3 mb-1">
+            <span className="font-bold text-sm text-on-surface tracking-tight truncate">
               {record.customer_name || record.client_id}
             </span>
-            <div className="flex items-center gap-2 flex-shrink-0">
+            <div className="flex items-center gap-3">
               <RiskBadge level={record.risk_level} />
-              <span className="font-mono text-sm font-bold text-[#031636] tabular-nums">
+              <span className="font-black text-sm text-primary tabular-nums font-tnum">
                 {fmt(record.amount)}
               </span>
             </div>
           </div>
-          <p className="mt-1 text-xs text-[#44474e] leading-snug line-clamp-2">
+          <p className="text-[11px] text-on-surface-variant leading-relaxed line-clamp-1 font-medium">
             {record.anomaly_reason}
           </p>
         </div>
 
-        <ChevronRightIcon />
+        <div className={`transition-transform duration-200 ${expanded ? 'rotate-90' : ''}`}>
+           <ChevronRightIcon />
+        </div>
       </button>
 
       {/* Expanded Detail */}
       {expanded && (
-        <div className="border-t border-[#e5eeff] px-4 py-3 bg-[#f8f9ff]">
-          <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-xs">
+        <div className="border-t border-outline-variant px-4 py-4 bg-surface-container-low">
+          <div className="grid grid-cols-2 gap-x-8 gap-y-4 text-xs">
             <DetailRow label="NIT/DUI" value={record.nit_dui} />
             <DetailRow label="Tipo Doc." value={record.document_type} />
             <DetailRow label="Transacción" value={record.transaction_type} />
@@ -178,13 +180,13 @@ function AnomalyCard({
           </div>
 
           {/* XAI Insight Box */}
-          <div className="mt-3 p-3 rounded bg-amber-50 border border-amber-200 flex gap-2">
-            <div className="flex-shrink-0 text-amber-600 mt-0.5">
+          <div className="mt-5 p-4 rounded-lg bg-warning-container border border-warning/20 flex gap-3">
+            <div className="shrink-0 text-warning mt-0.5">
               <AlertTriangleIcon />
             </div>
             <div>
-              <p className="text-xs font-semibold text-amber-800 mb-0.5">Insight del Motor IA</p>
-              <p className="text-xs text-amber-700 leading-relaxed">{record.anomaly_reason}</p>
+              <p className="text-[10px] font-bold text-on-warning-container mb-1 uppercase tracking-wider">Insight del Motor IA</p>
+              <p className="text-xs text-on-warning-container/80 leading-relaxed font-medium">{record.anomaly_reason}</p>
             </div>
           </div>
         </div>
@@ -195,9 +197,9 @@ function AnomalyCard({
 
 function DetailRow({ label, value, mono }: { label: string; value: string | number; mono?: boolean }) {
   return (
-    <div>
-      <span className="text-[#75777f] font-medium">{label}: </span>
-      <span className={`text-[#0b1c30] ${mono ? "font-mono tabular-nums" : ""}`}>{value}</span>
+    <div className="flex flex-col gap-0.5">
+      <span className="text-outline text-[10px] font-bold uppercase tracking-wider">{label}</span>
+      <span className={`text-on-surface text-xs font-semibold ${mono ? "font-tnum tabular-nums" : ""}`}>{value}</span>
     </div>
   );
 }
@@ -219,11 +221,13 @@ export function AnomalyAlertPanel({ token }: AnomalyAlertPanelProps) {
   const [page, setPage] = useState(0);
   const PAGE_SIZE = 20;
 
-  const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+  const headers = useMemo(() => ({ Authorization: `Bearer ${token}`, "Content-Type": "application/json" }), [token]);
 
-  const fetchData = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+  const fetchData = useCallback(async (isMounted = true) => {
+    if (isMounted) {
+      setLoading(true);
+      setError(null);
+    }
     try {
       const [listRes, summaryRes] = await Promise.all([
         fetch(`${API_BASE}/ai/anomalies?limit=${PAGE_SIZE}&offset=${page * PAGE_SIZE}`, { headers }),
@@ -236,15 +240,18 @@ export function AnomalyAlertPanel({ token }: AnomalyAlertPanelProps) {
       const listData = await listRes.json();
       const summaryData = await summaryRes.json();
 
-      setRecords(listData.data || []);
-      setSummary(summaryData.data || null);
+      if (isMounted) {
+        setRecords(listData.data || []);
+        setSummary(summaryData.data || null);
+      }
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Error desconocido");
+      if (isMounted) {
+        setError(e instanceof Error ? e.message : "Error desconocido");
+      }
     } finally {
-      setLoading(false);
+      if (isMounted) setLoading(false);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, page]);
+  }, [headers, page]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -259,7 +266,16 @@ export function AnomalyAlertPanel({ token }: AnomalyAlertPanelProps) {
     }
   };
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => {
+    let isMounted = true;
+    const timer = setTimeout(() => {
+      fetchData(isMounted);
+    }, 0);
+    return () => { 
+      isMounted = false; 
+      clearTimeout(timer);
+    };
+  }, [fetchData]);
 
   const filtered = filter === "ALL" ? records : records.filter((r) => r.risk_level === filter);
 
@@ -269,14 +285,14 @@ export function AnomalyAlertPanel({ token }: AnomalyAlertPanelProps) {
       {/* Panel Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <div className="p-1.5 rounded-md bg-amber-100 text-amber-700">
+          <div className="p-1.5 rounded-md bg-warning-container text-warning border border-warning/20">
             <AlertTriangleIcon />
           </div>
           <div>
-            <h2 className="text-sm font-bold text-[#031636] leading-none">
+            <h2 className="text-xs font-black text-primary uppercase tracking-widest leading-none">
               Alertas de IA — Anomalías Tributarias
             </h2>
-            <p className="text-[11px] text-[#75777f] mt-0.5">
+            <p className="text-[10px] text-on-surface-variant font-bold mt-1 uppercase tracking-tighter opacity-70">
               Motor de detección basado en Isolation Forest · F07 / F14
             </p>
           </div>
@@ -284,12 +300,12 @@ export function AnomalyAlertPanel({ token }: AnomalyAlertPanelProps) {
         <button
           onClick={handleRefresh}
           disabled={refreshing || loading}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md
-            bg-[#031636] text-white hover:bg-[#1a2b4c] disabled:opacity-50
-            transition-colors border border-[#031636]"
+          className="flex items-center gap-2 px-5 py-2 text-[10px] font-bold uppercase tracking-widest rounded-lg
+            bg-primary text-on-primary hover:bg-primary-container disabled:opacity-50
+            transition-all shadow-sm border border-primary/10"
         >
           <RefreshIcon spinning={refreshing} />
-          {refreshing ? "Analizando..." : "Re-escanear"}
+          {refreshing ? "Analizando..." : "Re-escanear Base"}
         </button>
       </div>
 
@@ -320,7 +336,7 @@ export function AnomalyAlertPanel({ token }: AnomalyAlertPanelProps) {
       )}
 
       {/* Risk Filter Tabs */}
-      <div className="flex gap-1.5 border-b border-[#dce9ff] pb-2">
+      <div className="flex gap-2 border-b border-surface-container-high pb-3">
         {(["ALL", "ALTO", "MEDIO", "BAJO"] as const).map((lvl) => {
           const count =
             lvl === "ALL"
@@ -330,17 +346,17 @@ export function AnomalyAlertPanel({ token }: AnomalyAlertPanelProps) {
             <button
               key={lvl}
               onClick={() => setFilter(lvl)}
-              className={`px-3 py-1 rounded text-xs font-semibold transition-all
+              className={`px-4 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-widest transition-all
                 ${filter === lvl
-                  ? "bg-[#031636] text-white"
-                  : "text-[#44474e] hover:bg-[#e5eeff]"
+                  ? "bg-primary text-on-primary shadow-md"
+                  : "text-on-surface-variant hover:bg-surface-container hover:text-primary"
                 }`}
             >
               {lvl === "ALL" ? "Todos" : lvl} ({count})
             </button>
           );
         })}
-        <span className="ml-auto flex items-center gap-1 text-[11px] text-[#75777f]">
+        <span className="ml-auto flex items-center gap-1 text-[10px] font-bold text-outline uppercase tracking-widest">
           <ShieldIcon />
           Modelo v1.0
         </span>
@@ -368,19 +384,19 @@ export function AnomalyAlertPanel({ token }: AnomalyAlertPanelProps) {
 
       {/* Pagination */}
       {!loading && !error && (summary?.total_anomalous ?? 0) > PAGE_SIZE && (
-        <div className="flex items-center justify-between text-xs text-[#44474e] pt-2 border-t border-[#dce9ff]">
+        <div className="flex items-center justify-between text-xs text-on-surface-variant pt-4 border-t border-outline-variant">
           <button
             onClick={() => setPage((p) => Math.max(0, p - 1))}
             disabled={page === 0}
-            className="px-3 py-1.5 rounded border border-[#dce9ff] hover:bg-[#eff4ff] disabled:opacity-40 font-medium"
+            className="px-4 py-2 rounded-lg border border-outline-variant hover:bg-surface-container-low disabled:opacity-40 font-bold uppercase text-[10px] tracking-widest transition-all"
           >
             ← Anterior
           </button>
-          <span className="font-mono">Página {page + 1}</span>
+          <span className="font-mono font-bold">Página {page + 1}</span>
           <button
             onClick={() => setPage((p) => p + 1)}
             disabled={(page + 1) * PAGE_SIZE >= (summary?.total_anomalous ?? 0)}
-            className="px-3 py-1.5 rounded border border-[#dce9ff] hover:bg-[#eff4ff] disabled:opacity-40 font-medium"
+            className="px-4 py-2 rounded-lg border border-outline-variant hover:bg-surface-container-low disabled:opacity-40 font-bold uppercase text-[10px] tracking-widest transition-all"
           >
             Siguiente →
           </button>
@@ -396,7 +412,7 @@ function LoadingSkeleton() {
   return (
     <div className="flex flex-col gap-2 animate-pulse">
       {[1, 2, 3].map((i) => (
-        <div key={i} className="h-16 bg-[#e5eeff] rounded-lg" />
+        <div key={i} className="h-16 bg-surface-container rounded-lg" />
       ))}
     </div>
   );
@@ -405,14 +421,14 @@ function LoadingSkeleton() {
 function ErrorState({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
     <div className="flex flex-col items-center gap-3 py-10 text-center">
-      <div className="p-3 rounded-full bg-[#ffdad6] text-[#93000a]">
+      <div className="p-3 rounded-full bg-error/10 text-error border border-error/20">
         <AlertTriangleIcon />
       </div>
-      <p className="text-sm font-semibold text-[#031636]">Error al cargar anomalías</p>
-      <p className="text-xs text-[#44474e]">{message}</p>
+      <p className="text-sm font-bold text-primary uppercase tracking-wider">Error al cargar anomalías</p>
+      <p className="text-xs text-on-surface-variant font-medium">{message}</p>
       <button
         onClick={onRetry}
-        className="mt-1 px-4 py-1.5 text-xs font-semibold rounded-md bg-[#031636] text-white hover:bg-[#1a2b4c]"
+        className="mt-2 px-6 py-2 text-[10px] font-black uppercase tracking-[0.2em] rounded-lg bg-primary text-on-primary hover:bg-primary-container transition-all"
       >
         Reintentar
       </button>
@@ -422,16 +438,18 @@ function ErrorState({ message, onRetry }: { message: string; onRetry: () => void
 
 function EmptyState({ filter }: { filter: string }) {
   return (
-    <div className="flex flex-col items-center gap-2 py-12 text-center">
-      <div className="p-3 rounded-full bg-[#e5eeff] text-[#006b5f]">
+    <div className="flex flex-col items-center gap-4 py-16 text-center">
+      <div className="p-4 rounded-full bg-surface-container text-secondary border border-outline-variant shadow-inner">
         <ShieldIcon />
       </div>
-      <p className="text-sm font-semibold text-[#031636]">
-        {filter === "ALL" ? "Sin anomalías detectadas" : `Sin anomalías de riesgo ${filter}`}
-      </p>
-      <p className="text-xs text-[#75777f]">
-        El motor IA no encontró irregularidades en los registros tributarios.
-      </p>
+      <div>
+        <p className="text-sm font-black text-primary uppercase tracking-widest">
+          {filter === "ALL" ? "Sin anomalías detectadas" : `Sin anomalías de riesgo ${filter}`}
+        </p>
+        <p className="text-xs text-on-surface-variant font-medium mt-2 max-w-xs mx-auto leading-relaxed">
+          El motor IA no encontró irregularidades en los registros tributarios analizados.
+        </p>
+      </div>
     </div>
   );
 }

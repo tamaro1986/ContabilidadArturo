@@ -1,116 +1,150 @@
-'use client';
+"use client";
 
-import React from 'react';
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  Cell
-} from 'recharts';
+import React, { useMemo } from 'react';
 
-interface MonthlyCustomer {
-  client_id: string;
-  customer_name: string;
-  monto_mes: number;
-  etiqueta: string;
-  color: string;
-  narrativa: string;
-}
+import { MonthlyCustomer } from "@/types/analytics";
 
 interface MonthlyCustomerChartProps {
   data: MonthlyCustomer[];
   periodo: string;
 }
 
-const CustomTooltip = ({ active, payload }: any) => {
-  if (active && payload && payload.length) {
-    const data = payload[0].payload as MonthlyCustomer;
+/**
+ * MonthlyCustomerChart
+ * Native SVG replacement for Recharts BarChart (Vertical).
+ * Rules: Zero external deps, Tailwind v4, Dumb UI.
+ */
+export function MonthlyCustomerChart({ data, periodo }: MonthlyCustomerChartProps) {
+  // Dimensiones del gráfico
+  const rowHeight = 40;
+  const chartWidth = 800;
+  const labelWidth = 180;
+  const paddingRight = 40;
+  const barMaxW = chartWidth - labelWidth - paddingRight;
+
+  const { bars, chartHeight, uniqueSegments } = useMemo(() => {
+    if (!data || data.length === 0) {
+      return { bars: [], chartHeight: 40, uniqueSegments: [] };
+    }
+
+    const maxMonto = Math.max(...data.map(d => d.monto_mes), 1);
+    const chartHeight = data.length * rowHeight + 40;
+
+    const processedBars = data.map((d, i) => {
+      const width = (d.monto_mes / maxMonto) * barMaxW;
+      const displayName = d.customer_name.length > 22 
+        ? d.customer_name.substring(0, 20) + "..." 
+        : d.customer_name;
+      
+      return {
+        ...d,
+        y: i * rowHeight + 20,
+        width: Math.max(width, 2), // Mínimo 2px para visibilidad
+        displayName
+      };
+    });
+
+    const seen = new Set();
+    const segments = data.filter(d => {
+      if (seen.has(d.etiqueta)) return false;
+      seen.add(d.etiqueta);
+      return true;
+    }).map(d => ({ name: d.etiqueta, color: d.color }));
+
+    return { bars: processedBars, chartHeight, uniqueSegments: segments };
+  }, [data, barMaxW]);
+
+  if (!data || data.length === 0) {
     return (
-      <div className="bg-white border border-outline-variant p-4 rounded-lg shadow-lg max-w-xs">
-        <p className="font-bold text-primary text-sm mb-1">{data.customer_name || data.client_id}</p>
-        <p className="text-2xl font-bold text-secondary font-tnum mb-2">
-          ${data.monto_mes.toLocaleString('es-SV', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-        </p>
-        <div className="border-t border-outline-variant my-2 pt-2">
-          <div className="flex items-center gap-2 mb-1">
-            <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: data.color }} />
-            <span className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">{data.etiqueta}</span>
-          </div>
-          <p className="text-[11px] text-on-surface-variant/80 italic leading-relaxed">
-            "{data.narrativa}"
-          </p>
-        </div>
+      <div className="h-64 flex items-center justify-center border border-dashed border-outline-variant rounded-xl">
+        <span className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest opacity-40">
+          Sin datos de facturación para este período
+        </span>
       </div>
     );
   }
-  return null;
-};
 
-export function MonthlyCustomerChart({ data, periodo }: MonthlyCustomerChartProps) {
-  // Truncar nombres largos para el eje Y
-  const chartData = data.map(item => ({
-    ...item,
-    displayName: item.customer_name.length > 25 
-      ? item.customer_name.substring(0, 22) + '...' 
-      : item.customer_name
-  }));
-
-  // Extraer leyendas únicas
-  const uniqueSegments = Array.from(new Set(data.map(item => JSON.stringify({
-    name: item.etiqueta,
-    color: item.color
-  })))).map(s => JSON.parse(s));
 
   return (
-    <div className="bg-white rounded-lg p-8 border border-outline-variant shadow-sm transition-all hover:border-secondary/30">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+    <div className="flex flex-col space-y-6">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h2 className="text-sm font-bold text-primary uppercase tracking-widest flex items-center gap-2">
-            Ventas por Cliente
+          <h2 className="text-xs font-black text-primary uppercase tracking-widest flex items-center gap-2">
+            Volumen por Cliente
           </h2>
-          <p className="text-xs text-on-surface-variant mt-1">Top clientes con mayor volumen de transacciones en {periodo}</p>
+          <p className="text-[9px] text-on-surface-variant font-bold uppercase opacity-50 tracking-wider">
+            Distribución en {periodo}
+          </p>
         </div>
-        <div className="text-[10px] font-bold px-3 py-1 bg-secondary/10 text-secondary rounded-md border border-secondary/20 uppercase tracking-[0.2em] w-fit">
-          Período Actual
+        <div className="text-[9px] font-black px-2.5 py-1 bg-secondary/10 text-secondary rounded border border-secondary/20 uppercase tracking-widest">
+          Top Clientes
         </div>
       </div>
-      
-      <div className="h-[450px] w-full">
-        <ResponsiveContainer width="100%" height="100%">
-          <BarChart
-            data={chartData}
-            layout="vertical"
-            margin={{ top: 5, right: 30, left: 60, bottom: 5 }}
-          >
-            <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#e5e7eb" />
-            <XAxis type="number" hide />
-            <YAxis 
-              dataKey="displayName" 
-              type="category" 
-              tick={{ fontSize: 10, fill: 'var(--color-on-surface-variant)', fontWeight: 600 }}
-              width={150}
-              axisLine={false}
-              tickLine={false}
+
+      <div className="relative group/chart border border-outline-variant/20 rounded-xl bg-surface-container-lowest p-6 overflow-hidden">
+        <svg viewBox={`0 0 ${chartWidth} ${chartHeight}`} className="w-full h-auto overflow-visible select-none">
+          {/* Vertical Grid Lines */}
+          {[0, 0.25, 0.5, 0.75, 1].map((p, i) => (
+            <line 
+              key={i}
+              x1={labelWidth + p * barMaxW} 
+              y1={0} 
+              x2={labelWidth + p * barMaxW} 
+              y2={chartHeight - 20}
+              className="stroke-outline-variant stroke-[0.5] opacity-20"
+              strokeDasharray="4 4"
             />
-            <Tooltip content={<CustomTooltip />} cursor={{ fill: 'var(--color-surface-container-low)', opacity: 0.5 }} />
-            <Bar dataKey="monto_mes" radius={[0, 4, 4, 0]} barSize={24}>
-              {chartData.map((entry, index) => (
-                <Cell key={`cell-${index}`} fill={entry.color} />
-              ))}
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
+          ))}
+
+          {bars.map((bar) => (
+            <g key={bar.client_id} className="group/row">
+              {/* Row Highlight */}
+              <rect 
+                x={0} y={bar.y - 10} width={chartWidth} height={rowHeight} 
+                className="fill-transparent group-hover/row:fill-surface-container-low/40 transition-colors"
+                rx="4"
+              />
+              
+              {/* Label */}
+              <text 
+                x={labelWidth - 15} 
+                y={bar.y + 16} 
+                textAnchor="end" 
+                className="fill-on-surface-variant text-[11px] font-bold opacity-60 group-hover/row:opacity-100 transition-opacity"
+              >
+                {bar.displayName}
+              </text>
+
+              {/* Bar */}
+              <rect 
+                x={labelWidth} 
+                y={bar.y + 2} 
+                width={bar.width} 
+                height={20} 
+                rx="4"
+                style={{ fill: bar.color }}
+                className="opacity-80 group-hover/row:opacity-100 transition-all duration-300"
+              />
+
+              {/* Value Label */}
+              <text 
+                x={labelWidth + bar.width + 10} 
+                y={bar.y + 16} 
+                className="fill-on-surface-variant text-[10px] font-black tabular-nums opacity-0 group-hover/row:opacity-100 transition-opacity"
+              >
+                ${bar.monto_mes.toLocaleString('es-SV', { maximumFractionDigits: 0 })}
+              </text>
+            </g>
+          ))}
+        </svg>
       </div>
-      
-      <div className="flex flex-wrap justify-center gap-x-10 gap-y-3 mt-8 pt-6 border-t border-outline-variant">
+
+      {/* Legend */}
+      <div className="flex flex-wrap justify-center gap-6 pt-4 border-t border-outline-variant/30">
         {uniqueSegments.map((seg, i) => (
-          <div key={i} className="flex items-center gap-2.5">
-            <div className="w-3 h-3 rounded-sm shadow-sm" style={{ backgroundColor: seg.color }} />
-            <span className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">
+          <div key={i} className="flex items-center gap-2">
+            <div className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: seg.color }} />
+            <span className="text-[9px] font-black uppercase tracking-widest text-on-surface-variant opacity-70">
               {seg.name}
             </span>
           </div>
@@ -119,4 +153,5 @@ export function MonthlyCustomerChart({ data, periodo }: MonthlyCustomerChartProp
     </div>
   );
 }
+
 

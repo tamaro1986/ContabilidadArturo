@@ -11,27 +11,27 @@ router = APIRouter()
 SEGMENT_MAPPING = {
     "estrella": {
         "label": "Clientes Estrella",
-        "color": "#10b981",  # Verde
+        "color": "var(--color-secondary)",  # Official Stitch Green
         "insight": "Genera altos ingresos y nos compra constantemente."
     },
     "habituales": {
         "label": "Compradores Habituales",
-        "color": "#0ea5e9",  # Turquesa
+        "color": "var(--color-primary)",  # Official Stitch Dark Blue
         "insight": "Compra con regularidad. Una relación comercial estable y confiable."
     },
     "prometedores": {
         "label": "Nuevos Prometedores",
-        "color": "#f59e0b",  # Amarillo
+        "color": "var(--color-warning)",  # Official Stitch Warning Amber
         "insight": "Cliente reciente con buen potencial de crecimiento."
     },
     "desarrollo": {
         "label": "En Desarrollo",
-        "color": "#f97316",  # Naranja
+        "color": "var(--color-surface-tint)",  # Semantic Slate/Blue
         "insight": "Clientes con compras esporádicas; ideal para ofertas de frecuencia."
     },
     "atencion": {
         "label": "Requieren Atención",
-        "color": "#ef4444",  # Rojo
+        "color": "var(--color-error)",  # Official Stitch Error Red
         "insight": "Solía comprar mucho, pero no lo ha hecho recientemente."
     }
 }
@@ -629,6 +629,9 @@ def get_compras_annex(
         results = duck_con.execute(query, [tenant_id, tenant_id]).fetchall()
         columns = [desc[0] for desc in duck_con.description]
         data = [dict(zip(columns, row)) for row in results]
+        return {"status": "success", "data": data}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error en anexo de compras: {str(e)}")
 
 @router.get("/tax-summary/annexes/payroll")
 def get_payroll_annex(
