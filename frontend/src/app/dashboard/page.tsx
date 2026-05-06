@@ -277,7 +277,7 @@ export default function DashboardPage() {
                                 <p className="text-[11px] font-black uppercase tracking-widest text-primary leading-none">Arturo Admin</p>
                                 <p className="text-[9px] font-bold text-on-surface-variant opacity-60 uppercase tracking-widest mt-1">Socio Principal</p>
                             </div>
-                            <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-primary to-primary-container p-0.5 shadow-lg group cursor-pointer active:scale-95 transition-all">
+                            <div className="w-11 h-11 rounded-2xl bg-linear-to-tr from-primary to-primary-container p-0.5 shadow-lg group cursor-pointer active:scale-95 transition-all">
                                 <div className="w-full h-full rounded-[14px] bg-white flex items-center justify-center overflow-hidden">
                                     <span className="text-[12px] font-black text-primary">AA</span>
                                 </div>
@@ -316,7 +316,7 @@ export default function DashboardPage() {
                                     <div className="rotate-90 opacity-40 group-hover:translate-x-1 transition-transform"><Icons.ArrowRight /></div>
                                 </button>
                             </div>
-                            <button className="bg-primary text-on-primary px-8 py-3 rounded-2xl font-black text-[11px] uppercase tracking-[0.15em] flex items-center gap-3 hover:scale-[1.02] shadow-xl shadow-primary/20 transition-all self-end">
+                            <button className="bg-primary text-on-primary px-8 py-3 rounded-2xl font-black text-[11px] uppercase tracking-widest flex items-center gap-3 hover:scale-[1.02] shadow-xl shadow-primary/20 transition-all self-end">
                                 <Icons.Download />
                                 Reporte Pro
                             </button>
@@ -346,7 +346,7 @@ export default function DashboardPage() {
                                                     </span>
                                                 </div>
                                             </div>
-                                            <div className="h-[420px] w-full">
+                                            <div className="h-105 w-full">
                                                 <FinancialTrendsChart data={trendsData} />
                                             </div>
                                         </div>
@@ -354,7 +354,7 @@ export default function DashboardPage() {
                                     <div className="lg:col-span-4 flex flex-col gap-10">
                                         <div className="bg-white border border-outline-variant/40 rounded-[2.5rem] p-8 shadow-xl shadow-surface-container/50 flex flex-col flex-1">
                                             <h3 className="text-sm font-black text-primary uppercase tracking-[0.2em] mb-10">Rendimiento Operativo</h3>
-                                            <div className="flex-grow flex items-center justify-center">
+                                            <div className="grow flex items-center justify-center">
                                                 <ProfitabilityChart data={trendsData} />
                                             </div>
                                             <div className="mt-8 pt-8 border-t border-outline-variant/20">
@@ -396,9 +396,9 @@ export default function DashboardPage() {
                                 {/* Stats Highlights */}
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
                                     {[
-                                        { label: 'Débito Fiscal (IVA)', val: taxData?.liquidation?.iva_ventas, color: 'text-primary', bg: 'bg-white' },
-                                        { label: 'Crédito Fiscal (IVA)', val: taxData?.liquidation?.iva_compras, color: 'text-secondary', bg: 'bg-white' },
-                                        { label: 'Saldo de Liquidación', val: taxData?.liquidation?.total_pagar, color: 'text-primary', bg: 'bg-secondary-container/20', isHighlight: true }
+                                        { label: 'Débito Fiscal (IVA)', val: taxData?.liquidation?.debito_fiscal, color: 'text-primary', bg: 'bg-white' },
+                                        { label: 'Crédito Fiscal (IVA)', val: taxData?.liquidation?.credito_fiscal, color: 'text-secondary', bg: 'bg-white' },
+                                        { label: 'Saldo de Liquidación', val: taxData?.liquidation?.neto, color: 'text-primary', bg: 'bg-secondary-container/20', isHighlight: true }
                                     ].map((stat, i) => (
                                         <div key={i} className={`${stat.bg} border border-outline-variant/40 rounded-3xl p-8 flex items-center justify-between shadow-lg shadow-surface-container/30 group hover:-translate-y-1 transition-all duration-300`}>
                                             <div>
@@ -476,7 +476,7 @@ export default function DashboardPage() {
 
                     {/* AI Alerts Overlay (Modal for Intelligence Mode) */}
                     {activeTab === 'ai' && (
-                        <div className="fixed inset-0 z-[100] bg-primary/40 backdrop-blur-md flex justify-end animate-in fade-in duration-500">
+                        <div className="fixed inset-0 z-100 bg-primary/40 backdrop-blur-md flex justify-end animate-in fade-in duration-500">
                             <div className="w-full max-w-2xl bg-white h-full shadow-2xl p-12 overflow-y-auto animate-in slide-in-from-right duration-500 flex flex-col">
                                 <div className="flex justify-between items-center mb-12">
                                     <div className="flex items-center gap-4">
@@ -516,8 +516,8 @@ export default function DashboardPage() {
 
             {/* Premium Decorative elements */}
             <div className="fixed inset-0 pointer-events-none z-[-1] overflow-hidden">
-                <div className={`absolute top-0 right-0 w-[800px] h-[800px] rounded-full blur-[160px] transition-all duration-1000 ${viewMode === 'fiscal' ? 'bg-secondary/5 -mr-40 -mt-40' : 'bg-primary/5 -mr-40 -mt-40'}`} />
-                <div className={`absolute bottom-0 left-0 w-[600px] h-[600px] rounded-full blur-[140px] transition-all duration-1000 ${viewMode === 'fiscal' ? 'bg-primary/5 -ml-20 -mb-20' : 'bg-secondary/5 -ml-20 -mb-20'}`} />
+                <div className={`absolute top-0 right-0 w-200 h-200 rounded-full blur-[160px] transition-all duration-1000 ${viewMode === 'fiscal' ? 'bg-secondary/5 -mr-40 -mt-40' : 'bg-primary/5 -mr-40 -mt-40'}`} />
+                <div className={`absolute bottom-0 left-0 w-150 h-150 rounded-full blur-[140px] transition-all duration-1000 ${viewMode === 'fiscal' ? 'bg-primary/5 -ml-20 -mb-20' : 'bg-secondary/5 -ml-20 -mb-20'}`} />
             </div>
         </div>
     );
