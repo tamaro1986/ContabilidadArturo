@@ -61,7 +61,7 @@ export default function DocumentHealthBadge({ data }: { data: DocumentHealth | u
 
     return (
         <div className="bg-surface-container-lowest rounded-lg p-6 border border-outline-variant shadow-sm h-full flex flex-col transition-all hover:border-secondary/30">
-            <h2 className="text-xs font-bold mb-6 text-primary uppercase tracking-[0.15em] flex items-center justify-between">
+            <h2 className="text-xs font-bold mb-6 text-primary uppercase tracking-widest flex items-center justify-between">
                 Estado de Cumplimiento
                 <span className={`text-[10px] font-bold px-2 py-0.5 rounded tracking-normal ${colorClass} ${bgClass} border`}>
                     {label}

@@ -9,7 +9,7 @@ export default function TaxLiquidationCard({ data }: { data: TaxLiquidation | un
 
     return (
         <div className="bg-surface-container-lowest rounded-lg p-6 border border-outline-variant shadow-sm h-full flex flex-col transition-all hover:border-secondary/30">
-            <h2 className="text-xs font-bold mb-6 text-primary uppercase tracking-[0.15em] flex items-center justify-between">
+            <h2 className="text-xs font-bold mb-6 text-primary uppercase tracking-widest flex items-center justify-between">
                 Liquidación de IVA 
                 <span className="text-[10px] font-medium text-on-surface-variant bg-surface-dim px-2 py-0.5 rounded tracking-normal normal-case">Período: {data.periodo || 'N/A'}</span>
             </h2>

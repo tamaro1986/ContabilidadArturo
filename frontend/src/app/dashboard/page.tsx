@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/utils/supabase";
 import TaxLiquidationCard from "../../components/analytics/TaxLiquidationCard";
-import TopEntitiesChart from "../../components/analytics/TopEntitiesChart";
+
 import DocumentHealthBadge from "../../components/analytics/DocumentHealthBadge";
 import FinancialTrendsChart from "../../components/analytics/FinancialTrendsChart";
 import ProfitabilityChart from "../../components/analytics/ProfitabilityChart";
@@ -62,7 +62,6 @@ const Icons = {
 export default function DashboardPage() {
     const [persona, setPersona] = useState<'business' | 'fiscal'>('business');
     const [activeTab, setActiveTab] = useState('overview');
-    const [taxSubTab, setTaxSubTab] = useState<'summary' | 'annexes'>('summary');
     const [sidebarOpen, setSidebarOpen] = useState(true);
     
     // Data States
@@ -113,9 +112,9 @@ export default function DashboardPage() {
                     health: health.data
                 });
 
-            } catch (err: any) {
+            } catch (err: unknown) {
                 console.error("Fetch Error:", err);
-                setError(err.message);
+                setError(err instanceof Error ? err.message : String(err));
             } finally {
                 setLoading(false);
             }
@@ -133,6 +132,15 @@ export default function DashboardPage() {
             <div className="text-center">
                 <p className="text-white font-black tracking-[0.5em] uppercase text-xs mb-3 animate-pulse">Sincronizando Ecosistema</p>
                 <p className="text-emerald-500/50 text-[10px] font-bold uppercase tracking-widest">ContabilidadArturo Premium v3.0</p>
+            </div>
+        </div>
+    );
+
+    if (error) return (
+        <div className="min-h-screen flex items-center justify-center bg-zinc-950">
+            <div className="text-center p-8 bg-red-500/10 rounded-2xl border border-red-500/20 max-w-md">
+                <p className="text-red-500 font-bold mb-2">Error de Sincronización</p>
+                <p className="text-red-400/80 text-sm">{error}</p>
             </div>
         </div>
     );
@@ -166,10 +174,6 @@ export default function DashboardPage() {
 
     const sidebarItems = persona === 'business' ? businessSidebar : fiscalSidebar;
 
-    // Reset activeTab when persona changes
-    useEffect(() => {
-        setActiveTab(persona === 'business' ? 'overview' : 'fiscal-summary');
-    }, [persona]);
 
     return (
         <div className="min-h-screen bg-[#f8fafc] flex selection:bg-emerald-500/30">
@@ -177,7 +181,7 @@ export default function DashboardPage() {
             <aside className={`bg-zinc-950 text-white transition-all duration-500 ease-in-out flex flex-col z-50 ${sidebarOpen ? 'w-72' : 'w-20'}`}>
                 {/* Logo Area */}
                 <div className="p-6 h-20 flex items-center gap-4 overflow-hidden border-b border-white/5">
-                    <div className={`min-w-10 h-10 rounded-xl flex items-center justify-center text-white font-black text-xl shadow-lg transition-all duration-700 ${persona === 'business' ? 'bg-gradient-to-br from-emerald-400 to-emerald-600 shadow-emerald-500/20' : 'bg-gradient-to-br from-blue-500 to-blue-700 shadow-blue-500/20'}`}>A</div>
+                    <div className={`min-w-10 h-10 rounded-xl flex items-center justify-center text-white font-black text-xl shadow-lg transition-all duration-700 ${persona === 'business' ? 'bg-linear-to-br from-emerald-400 to-emerald-600 shadow-emerald-500/20' : 'bg-linear-to-br from-blue-500 to-blue-700 shadow-blue-500/20'}`}>A</div>
                     {sidebarOpen && (
                         <div className="flex flex-col leading-none">
                             <span className="text-lg font-black tracking-tight text-white uppercase">Arturo</span>
@@ -194,7 +198,7 @@ export default function DashboardPage() {
                             {section.items.map((item) => (
                                 <button
                                     key={item.id}
-                                    onClick={() => setActiveTab(item.id as any)}
+                                    onClick={() => setActiveTab(item.id)}
                                     className={`w-full flex items-center gap-4 px-4 py-3.5 rounded-xl transition-all duration-300 group relative ${activeTab === item.id ? (persona === 'business' ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20' : 'bg-blue-600 text-white shadow-lg shadow-blue-600/20') : 'text-zinc-400 hover:bg-white/5 hover:text-white'}`}
                                 >
                                     <div className={`transition-transform duration-300 ${activeTab === item.id ? 'scale-110' : 'group-hover:scale-110'}`}>
@@ -243,15 +247,15 @@ export default function DashboardPage() {
                         {/* Persona Switcher - Premium Toggle */}
                         <div className="flex items-center gap-1 bg-zinc-100 p-1.5 rounded-2xl shadow-inner border border-zinc-200">
                             <button 
-                                onClick={() => setPersona('business')}
-                                className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-[0.15em] transition-all duration-500 flex items-center gap-2 ${persona === 'business' ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20 scale-105' : 'text-zinc-500 hover:text-zinc-900'}`}
+                                onClick={() => { setPersona('business'); setActiveTab('overview'); }}
+                                className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all duration-500 flex items-center gap-2 ${persona === 'business' ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20 scale-105' : 'text-zinc-500 hover:text-zinc-900'}`}
                             >
                                 <Icons.Dashboard />
                                 Perspectiva de Negocio
                             </button>
                             <button 
-                                onClick={() => setPersona('fiscal')}
-                                className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-[0.15em] transition-all duration-500 flex items-center gap-2 ${persona === 'fiscal' ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20 scale-105' : 'text-zinc-500 hover:text-zinc-900'}`}
+                                onClick={() => { setPersona('fiscal'); setActiveTab('fiscal-summary'); }}
+                                className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all duration-500 flex items-center gap-2 ${persona === 'fiscal' ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20 scale-105' : 'text-zinc-500 hover:text-zinc-900'}`}
                             >
                                 <Icons.Tax />
                                 Cumplimiento Fiscal
@@ -277,7 +281,7 @@ export default function DashboardPage() {
                                     <p className="text-sm font-bold text-zinc-900 leading-none">Arturo Garcia</p>
                                     <p className="text-[10px] font-black text-zinc-400 uppercase tracking-tighter mt-1">Socio Principal</p>
                                 </div>
-                                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center text-white shadow-lg shadow-emerald-500/20 group-hover:scale-105 transition-transform">
+                                <div className="w-10 h-10 rounded-xl bg-linear-to-br from-emerald-400 to-emerald-600 flex items-center justify-center text-white shadow-lg shadow-emerald-500/20 group-hover:scale-105 transition-transform">
                                     <Icons.User />
                                 </div>
                             </div>
@@ -341,12 +345,12 @@ export default function DashboardPage() {
                                 {/* Key Indicators Grid */}
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
                                     {[
-                                        { label: 'Facturación Mensual', val: trendsData[trendsData.length-1]?.ingresos || 0, trend: '+12.5%', color: 'text-zinc-900', bg: 'bg-white' },
-                                        { label: 'Gastos Operativos', val: trendsData[trendsData.length-1]?.egresos || 0, trend: '-3.2%', color: 'text-zinc-900', bg: 'bg-white' },
-                                        { label: 'Margen de Utilidad', val: (trendsData[trendsData.length-1]?.ingresos || 0) - (trendsData[trendsData.length-1]?.egresos || 0), trend: '+8.1%', color: 'text-emerald-600', bg: 'bg-emerald-50/50 border-emerald-100' },
+                                        { label: 'Facturación Mensual', val: trendsData[trendsData.length-1]?.ventas_actual || 0, trend: '+12.5%', color: 'text-zinc-900', bg: 'bg-white' },
+                                        { label: 'Gastos Operativos', val: trendsData[trendsData.length-1]?.gastos_actual || 0, trend: '-3.2%', color: 'text-zinc-900', bg: 'bg-white' },
+                                        { label: 'Margen de Utilidad', val: (trendsData[trendsData.length-1]?.ventas_actual || 0) - (trendsData[trendsData.length-1]?.gastos_actual || 0), trend: '+8.1%', color: 'text-emerald-600', bg: 'bg-emerald-50/50 border-emerald-100' },
                                         { label: persona === 'business' ? 'Ticket Promedio' : 'Provisión IVA', val: persona === 'business' ? 124.50 : (taxData?.liquidation?.debito_fiscal || 0), trend: persona === 'business' ? '+4.2%' : 'A Tiempo', color: persona === 'business' ? 'text-emerald-600' : 'text-blue-600', bg: persona === 'business' ? 'bg-emerald-50/50 border-emerald-100' : 'bg-blue-50/50 border-blue-100' }
                                     ].map((stat, i) => (
-                                        <div key={i} className={`${stat.bg} border border-zinc-200/60 rounded-[2rem] p-8 shadow-sm group hover:shadow-xl hover:shadow-zinc-200/50 transition-all duration-500`}>
+                                        <div key={i} className={`${stat.bg} border border-zinc-200/60 rounded-4xl p-8 shadow-sm group hover:shadow-xl hover:shadow-zinc-200/50 transition-all duration-500`}>
                                             <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-3">{stat.label}</p>
                                             <div className="flex items-end justify-between">
                                                 <p className={`text-3xl font-black tabular-nums ${stat.color}`}>${stat.val.toLocaleString()}</p>
@@ -395,7 +399,7 @@ export default function DashboardPage() {
                                             <div className="mt-8 pt-8 border-t border-white/5 space-y-4">
                                                 <div className="flex justify-between items-center">
                                                     <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Resultado Neto</p>
-                                                    <p className="text-xl font-black text-white">${((trendsData[trendsData.length-1]?.ingresos || 0) - (trendsData[trendsData.length-1]?.egresos || 0)).toLocaleString()}</p>
+                                                    <p className="text-xl font-black text-white">${((trendsData[trendsData.length-1]?.ventas_actual || 0) - (trendsData[trendsData.length-1]?.gastos_actual || 0)).toLocaleString()}</p>
                                                 </div>
                                             </div>
                                         </div>
@@ -423,7 +427,9 @@ export default function DashboardPage() {
                                             <div className="w-1.5 h-6 bg-zinc-900 rounded-full" />
                                             Principales Proveedores
                                         </h3>
-                                        <TopEntitiesChart title="Concentración de Egresos" data={taxData?.topEntities?.top_suppliers || []} color="#18181b" />
+                                        <div className="flex items-center justify-center h-64 bg-zinc-50 border border-dashed border-zinc-300 rounded-2xl">
+                                            <p className="text-zinc-500 font-medium">Tabla de Egresos</p>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -436,18 +442,20 @@ export default function DashboardPage() {
                                     {[
                                         { label: 'Débito Fiscal (IVA)', val: taxData?.liquidation?.debito_fiscal, color: 'text-zinc-900', icon: Icons.Tax },
                                         { label: 'Crédito Fiscal (IVA)', val: taxData?.liquidation?.credito_fiscal, color: 'text-blue-600', icon: Icons.Tax },
-                                        { label: 'Saldo Neto IVA', val: taxData?.liquidation?.neto, color: 'text-indigo-600', bg: 'bg-indigo-50/30 border-indigo-100' }
-                                    ].map((stat, i) => (
-                                        <div key={i} className={`bg-white border border-zinc-200/60 rounded-3xl p-8 flex items-center justify-between shadow-sm group hover:-translate-y-1 transition-all duration-500 ${stat.bg}`}>
+                                        { label: 'Saldo Neto IVA', val: taxData?.liquidation?.neto, color: 'text-indigo-600', bg: 'bg-indigo-50/30 border-indigo-100', icon: Icons.Tax }
+                                    ].map((stat, i) => {
+                                        const Icon = stat.icon;
+                                        return (
+                                        <div key={i} className={`bg-white border border-zinc-200/60 rounded-3xl p-8 flex items-center justify-between shadow-sm group hover:-translate-y-1 transition-all duration-500 ${stat.bg || ''}`}>
                                             <div>
                                                 <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-2">{stat.label}</p>
                                                 <p className={`text-3xl font-black tabular-nums ${stat.color}`}>${stat.val?.toLocaleString()}</p>
                                             </div>
                                             <div className={`w-12 h-12 bg-zinc-100 rounded-2xl flex items-center justify-center text-zinc-400 group-hover:text-white transition-all duration-500 ${persona === 'fiscal' ? 'group-hover:bg-blue-600' : 'group-hover:bg-zinc-900'}`}>
-                                                <stat.icon />
+                                                {Icon && <Icon />}
                                             </div>
                                         </div>
-                                    ))}
+                                    )})}
                                 </div>
                                 <div className="bg-white border border-zinc-200 rounded-[2.5rem] shadow-xl shadow-zinc-200/40 overflow-hidden">
                                     <TaxLiquidationCard data={taxData?.liquidation} />
@@ -469,8 +477,12 @@ export default function DashboardPage() {
                                 <div className="lg:col-span-8 bg-white border border-zinc-200 rounded-[2.5rem] p-10 shadow-xl shadow-zinc-200/40">
                                     <h4 className="text-[11px] font-black text-zinc-900 uppercase tracking-widest mb-8">Concentración de Entidades Legales</h4>
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
-                                        <TopEntitiesChart title="Top Clientes" data={taxData?.topEntities?.top_clients || []} color="#3b82f6" />
-                                        <TopEntitiesChart title="Top Proveedores" data={taxData?.topEntities?.top_suppliers || []} color="#1d4ed8" />
+                                        <div className="flex items-center justify-center h-48 bg-zinc-50 border border-dashed border-zinc-300 rounded-2xl">
+                                            <p className="text-zinc-500 font-medium">Tabla de Clientes</p>
+                                        </div>
+                                        <div className="flex items-center justify-center h-48 bg-zinc-50 border border-dashed border-zinc-300 rounded-2xl">
+                                            <p className="text-zinc-500 font-medium">Tabla de Proveedores</p>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -529,9 +541,9 @@ export default function DashboardPage() {
 
             {/* Decorative Ambient Effects */}
             <div className="fixed inset-0 pointer-events-none z-[-1] overflow-hidden transition-all duration-1000">
-                <div className={`absolute top-0 right-0 w-[60rem] h-[60rem] rounded-full blur-[150px] -mr-[20rem] -mt-[20rem] transition-all duration-1000 ${persona === 'business' ? 'bg-emerald-500/10' : 'bg-blue-600/10'}`} />
-                <div className={`absolute bottom-0 left-0 w-[50rem] h-[50rem] rounded-full blur-[120px] -ml-[15rem] -mb-[15rem] transition-all duration-1000 ${persona === 'business' ? 'bg-zinc-200/20' : 'bg-indigo-500/10'}`} />
-                <div className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[80rem] h-[80rem] rounded-full blur-[180px] opacity-20 transition-all duration-1000 ${persona === 'business' ? 'bg-emerald-100/0' : 'bg-blue-400/5'}`} />
+                <div className={`absolute top-0 right-0 w-240 h-240 rounded-full blur-[150px] -mr-80 -mt-80 transition-all duration-1000 ${persona === 'business' ? 'bg-emerald-500/10' : 'bg-blue-600/10'}`} />
+                <div className={`absolute bottom-0 left-0 w-200 h-200 rounded-full blur-[120px] -ml-60 -mb-60 transition-all duration-1000 ${persona === 'business' ? 'bg-zinc-200/20' : 'bg-indigo-500/10'}`} />
+                <div className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-7xl h-320 rounded-full blur-[180px] opacity-20 transition-all duration-1000 ${persona === 'business' ? 'bg-emerald-100/0' : 'bg-blue-400/5'}`} />
             </div>
         </div>
     );
