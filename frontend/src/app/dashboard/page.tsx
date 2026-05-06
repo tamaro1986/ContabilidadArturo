@@ -2,10 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/utils/supabase";
-import CustomerSegmentChart from "../../components/analytics/CustomerSegmentChart";
-import CustomerSegmentTable from "../../components/analytics/CustomerSegmentTable";
-import SegmentInsightPanel from "../../components/analytics/SegmentInsightPanel";
-import { MonthlyCustomerChart } from "../../components/analytics/MonthlyCustomerChart";
 import TaxLiquidationCard from "../../components/analytics/TaxLiquidationCard";
 import TopEntitiesChart from "../../components/analytics/TopEntitiesChart";
 import DocumentHealthBadge from "../../components/analytics/DocumentHealthBadge";
@@ -16,9 +12,7 @@ import LegalAnnexesTab from "../../components/analytics/LegalAnnexesTab";
 import { AnomalyAlertPanel } from "../../components/ai/AnomalyAlertPanel";
 import { 
     TrendData, 
-    MonthlyCustomer, 
     BreakdownData, 
-    SegmentData, 
     TaxData 
 } from "@/types/analytics";
 
@@ -72,8 +66,6 @@ export default function DashboardPage() {
     const [sidebarOpen, setSidebarOpen] = useState(true);
     
     // Data States
-    const [segmentData, setSegmentData] = useState<SegmentData | null>(null);
-    const [monthlyCustomers, setMonthlyCustomers] = useState<MonthlyCustomer[]>([]);
     const [trendsData, setTrendsData] = useState<TrendData[]>([]);
     const [typesData, setTypesData] = useState<{ ventas: BreakdownData[]; gastos: BreakdownData[] } | null>(null);
     const [taxData, setTaxData] = useState<TaxData | null>(null);
@@ -104,9 +96,7 @@ export default function DashboardPage() {
 
                 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
                 
-                const [rfm, customers, trends, types, iva, top, health] = await Promise.all([
-                    fetch(`${API_URL}/analytics/rfm`, { headers }).then(r => r.json()),
-                    fetch(`${API_URL}/analytics/monthly-customers`, { headers }).then(r => r.json()),
+                const [trends, types, iva, top, health] = await Promise.all([
                     fetch(`${API_URL}/analytics/financial-trends`, { headers }).then(r => r.json()),
                     fetch(`${API_URL}/analytics/types-breakdown`, { headers }).then(r => r.json()),
                     fetch(`${API_URL}/analytics/tax-summary/iva-liquidation`, { headers }).then(r => r.json()),
@@ -114,8 +104,7 @@ export default function DashboardPage() {
                     fetch(`${API_URL}/analytics/tax-summary/document-health`, { headers }).then(r => r.json())
                 ]);
 
-                setSegmentData(rfm);
-                setMonthlyCustomers(customers.data || []);
+
                 setTrendsData(trends.data || []);
                 setTypesData(types.data || { ventas: [], gastos: [] });
                 setTaxData({
@@ -151,7 +140,6 @@ export default function DashboardPage() {
     const businessSidebar = [
         { group: "ESTRATEGIA", items: [
             { id: 'overview', label: 'Resumen Ejecutivo', icon: Icons.Dashboard },
-            { id: 'sales', label: 'Ventas y Clientes', icon: Icons.Sales },
             { id: 'expenses', label: 'Gastos y Operaciones', icon: Icons.Expenses },
         ]},
         { group: "INTELIGENCIA AI", items: [
@@ -416,32 +404,7 @@ export default function DashboardPage() {
                             </div>
                         )}
 
-                        {activeTab === 'sales' && (
-                            <div className="space-y-12 animate-in fade-in duration-700">
-                                <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-                                    <div className="lg:col-span-1">
-                                        <SegmentInsightPanel />
-                                    </div>
-                                    <div className="lg:col-span-3 bg-white border border-zinc-200 rounded-[2.5rem] p-10 shadow-xl shadow-zinc-200/40">
-                                        <h3 className="text-sm font-black text-zinc-900 uppercase tracking-widest mb-12 flex items-center gap-3">
-                                            <div className="w-1.5 h-6 bg-emerald-500 rounded-full" />
-                                            Análisis RFM: Fidelización de Cartera
-                                        </h3>
-                                        <div className="grid grid-cols-1 xl:grid-cols-3 gap-12">
-                                            <div className="xl:col-span-1 h-80">
-                                                <CustomerSegmentChart data={segmentData?.summary || []} />
-                                            </div>
-                                            <div className="xl:col-span-2 overflow-hidden">
-                                                <CustomerSegmentTable data={segmentData?.data || []} />
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div className="bg-white border border-zinc-200 rounded-[2.5rem] p-10 shadow-xl shadow-zinc-200/40">
-                                    <MonthlyCustomerChart data={monthlyCustomers} periodo="Mayo 2026" />
-                                </div>
-                            </div>
-                        )}
+
 
                         {activeTab === 'expenses' && (
                             <div className="space-y-12 animate-in fade-in duration-700">
