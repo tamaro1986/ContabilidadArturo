@@ -32,19 +32,19 @@ export default function CustomerSegmentTable({ data }: { data: CustomerSegmentRe
                 <table className="w-full text-left border-collapse table-fixed min-w-200">
                     <thead className="sticky top-0 bg-primary z-10 shadow-sm">
                         <tr>
-                            <th className="px-6 py-4 text-[10px] font-bold text-on-primary uppercase tracking-[0.15em] w-[35%]">
+                            <th className="px-6 py-4 text-[10px] font-bold text-on-primary uppercase tracking-widest w-1/3">
                                 Entidad / Razón Social
                             </th>
-                            <th className="px-6 py-4 text-[10px] font-bold text-on-primary uppercase tracking-[0.15em] w-[15%]">
+                            <th className="px-6 py-4 text-[10px] font-bold text-on-primary uppercase tracking-widest w-1/6">
                                 Registro Fiscal
                             </th>
-                            <th className="px-6 py-4 text-[10px] font-bold text-on-primary uppercase tracking-[0.15em] text-right w-[15%]">
+                            <th className="px-6 py-4 text-[10px] font-bold text-on-primary uppercase tracking-widest text-right w-1/6">
                                 Última Op.
                             </th>
-                            <th className="px-6 py-4 text-[10px] font-bold text-on-primary uppercase tracking-[0.15em] text-right w-[15%]">
+                            <th className="px-6 py-4 text-[10px] font-bold text-on-primary uppercase tracking-widest text-right w-1/6">
                                 Volumen Total
                             </th>
-                            <th className="px-6 py-4 text-[10px] font-bold text-on-primary uppercase tracking-[0.15em] text-center w-[20%]">
+                            <th className="px-6 py-4 text-[10px] font-bold text-on-primary uppercase tracking-widest text-center w-1/6">
                                 Clasificación
                             </th>
                         </tr>
@@ -110,10 +110,10 @@ export default function CustomerSegmentTable({ data }: { data: CustomerSegmentRe
                 </table>
             </div>
             <div className="px-6 py-4 bg-surface-container-lowest border-t border-outline-variant flex justify-between items-center">
-                <span className="text-[10px] text-on-surface-variant font-bold uppercase tracking-[0.2em]">
+                <span className="text-[10px] text-on-surface-variant font-bold uppercase tracking-widest">
                     Registros Identificados: {data.length}
                 </span>
-                <button className="text-[10px] font-bold text-secondary flex items-center gap-2 hover:bg-secondary/5 px-4 py-2 rounded-md transition-all uppercase tracking-[0.2em] border border-transparent hover:border-secondary/20">
+                <button className="text-[10px] font-bold text-secondary flex items-center gap-2 hover:bg-secondary/5 px-4 py-2 rounded-md transition-all uppercase tracking-widest border border-transparent hover:border-secondary/20">
                     Exportar Análisis <ExternalLinkIcon size={14} />
                 </button>
             </div>

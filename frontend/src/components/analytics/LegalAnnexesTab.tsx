@@ -116,18 +116,18 @@ export default function LegalAnnexesTab() {
     const activeConfig = annexConfig[activeAnnex];
 
     return (
-        <div className="space-y-6 max-w-400 mx-auto pb-20">
+        <div className="space-y-6 max-w-spacing-200 mx-auto pb-20">
             {/* 1. HEADER */}
             <div className="bg-surface-container-lowest border border-outline-variant rounded-md shadow-sm overflow-hidden">
                 <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-6 p-8">
                     <div className="flex items-center gap-6">
                         <div className="p-4 bg-surface-container-high text-primary rounded-md">{activeConfig.icon}</div>
                         <div>
-                            <div className="flex items-center gap-3 mb-1.5">
+                             <div className="flex items-center gap-3 mb-1.5">
                                 <span className="px-2 py-0.5 rounded-sm text-[10px] font-bold uppercase tracking-widest bg-primary text-on-primary">{activeConfig.form}</span>
                                 <div className="flex items-center gap-1.5 text-secondary text-[10px] font-bold uppercase tracking-widest"><ShieldCheckIcon size={12} /> Verificado por Hacienda</div>
                             </div>
-                            <h2 className="text-2xl font-bold text-primary tracking-tight mb-1">{activeConfig.title}</h2>
+                            <h2 className="text-2xl font-bold text-primary tracking-tightest mb-1">{activeConfig.title}</h2>
                             <p className="text-on-surface-variant text-sm font-medium">{activeConfig.subtitle}</p>
                         </div>
                     </div>
@@ -157,10 +157,10 @@ export default function LegalAnnexesTab() {
                     { label: "Operaciones Exentas", value: totals.exento, info: "Sin impacto" },
                     { label: activeAnnex === '14' ? 'Total Liquidado' : 'Total Transado', value: totals.total, isBold: true, info: "Monto conciliado" }
                 ].map((kpi, idx) => (
-                    <div key={idx} className="bg-surface-container-lowest p-6 rounded-md border border-outline-variant shadow-sm flex flex-col justify-between min-h-35">
+                    <div key={idx} className="bg-surface-container-lowest p-6 rounded-md border border-outline-variant shadow-sm flex flex-col justify-between min-h-spacing-10">
                         <div>
                             <p className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-3">{kpi.label}</p>
-                            <p className={`text-2xl font-bold tracking-tight font-tnum ${kpi.isAccent ? 'text-secondary' : 'text-primary'}`}>${kpi.value.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                            <p className={`text-2xl font-bold tracking-tightest font-tnum ${kpi.isAccent ? 'text-secondary' : 'text-primary'}`}>${kpi.value.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
                         </div>
                         <div className="flex items-center gap-2 mt-4 pt-4 border-t border-surface-container">
                             <span className="text-[10px] font-medium text-on-surface-variant italic">{kpi.info}</span>
@@ -209,7 +209,7 @@ export default function LegalAnnexesTab() {
                                         <td className="px-6 py-4 whitespace-nowrap text-on-surface-variant">{row.fecha}</td>
                                         <td className="px-6 py-4"><div className="flex flex-col"><span className="text-primary font-bold">{row.numero || 'S/N'}</span><span className="text-[9px] text-on-surface-variant uppercase">Clase {row.clase_doc || '01'}</span></div></td>
                                         <td className="px-6 py-4 text-on-surface-variant">{row.nit_dui}</td>
-                                        <td className="px-6 py-4"><div className="max-w-60 truncate font-bold text-primary">{row.nombre}</div></td>
+                                        <td className="px-6 py-4"><div className="max-w-spacing-25 truncate font-bold text-primary">{row.nombre}</div></td>
                                         {activeAnnex === '2' && (<td className="px-6 py-4 text-center"><span className="text-[10px] text-on-surface-variant font-medium">{row.resolucion || '001-TP'}</span></td>)}
                                         {activeAnnex === '14' ? (<>
                                             <td className="px-6 py-4 text-right text-on-surface-variant">${(row.afp || 0).toFixed(2)}</td>
