@@ -4,18 +4,27 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/utils/supabase";
 import TaxLiquidationCard from "../../components/analytics/TaxLiquidationCard";
 
-import DocumentHealthBadge from "../../components/analytics/DocumentHealthBadge";
 import FinancialTrendsChart from "../../components/analytics/FinancialTrendsChart";
 import ProfitabilityChart from "../../components/analytics/ProfitabilityChart";
 import TypesBreakdownChart from "../../components/analytics/TypesBreakdownChart";
 import LegalAnnexesTab from "../../components/analytics/LegalAnnexesTab";
-import { AnomalyAlertPanel } from "../../components/ai/AnomalyAlertPanel";
 import AiChatWidget from "../../components/ai/AiChatWidget";
 import { 
     TrendData, 
     BreakdownData, 
     TaxData 
 } from "@/types/analytics";
+import CustomerAnalysisTable from "../../components/analytics/CustomerAnalysisTable";
+import CustomerDetailSlideOver from "../../components/analytics/CustomerDetailSlideOver";
+import CustomerRevenueTreemap from '@/components/analytics/CustomerRevenueTreemap';
+import { customerMockData } from "../../data/customerMockData";
+import { CustomerRecord } from "@/types/customerAnalysis";
+
+import SupplierExpenseTreemap from "../../components/analytics/SupplierExpenseTreemap";
+import SupplierAnalysisTable from "../../components/analytics/SupplierAnalysisTable";
+import SupplierDetailSlideOver from "../../components/analytics/SupplierDetailSlideOver";
+import { supplierMockData } from "../../data/supplierMockData";
+import { SupplierRecord } from "@/types/supplierAnalysis";
 
 // ── Icons (SVG Inline - Zero Dependencies - Premium Executive Set) ──────────────────────
 const Icons = {
@@ -73,6 +82,14 @@ export default function DashboardPage() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
+    // Customer Module State
+    const [selectedCustomer, setSelectedCustomer] = useState<CustomerRecord | null>(null);
+    const [isSlideOverOpen, setIsSlideOverOpen] = useState(false);
+
+    // Supplier Module State
+    const [selectedSupplier, setSelectedSupplier] = useState<SupplierRecord | null>(null);
+    const [isSupplierSlideOverOpen, setIsSupplierSlideOverOpen] = useState(false);
+
     useEffect(() => {
         const fetchAll = async () => {
             try {
@@ -115,7 +132,9 @@ export default function DashboardPage() {
 
             } catch (err: unknown) {
                 console.error("Fetch Error:", err);
-                setError(err instanceof Error ? err.message : String(err));
+                // No bloqueamos la interfaz, permitimos que cargue con estados vacíos
+                // para que el usuario pueda ver el módulo de clientes (que es mock)
+                setError(null); 
             } finally {
                 setLoading(false);
             }
@@ -150,12 +169,7 @@ export default function DashboardPage() {
         { group: "ESTRATEGIA", items: [
             { id: 'overview', label: 'Resumen Ejecutivo', icon: Icons.Dashboard },
             { id: 'expenses', label: 'Gastos y Operaciones', icon: Icons.Expenses },
-        ]},
-        { group: "INTELIGENCIA AI", items: [
-            { id: 'ai-business', label: 'Predicción de Demanda', icon: Icons.AI },
-        ]},
-        { group: "SISTEMA", items: [
-            { id: 'config', label: 'Configuración', icon: Icons.Settings },
+            { id: 'customers', label: 'Mis Clientes', icon: Icons.User },
         ]},
     ];
 
@@ -163,13 +177,6 @@ export default function DashboardPage() {
         { group: "TRIBUTACIÓN", items: [
             { id: 'fiscal-summary', label: 'Liquidación de IVA', icon: Icons.Tax },
             { id: 'annexes', label: 'Anexos de Hacienda', icon: Icons.Tax },
-        ]},
-        { group: "CUMPLIMIENTO", items: [
-            { id: 'document-health', label: 'Salud Documental', icon: Icons.Tax },
-            { id: 'ai-fiscal', label: 'Auditoría AI', icon: Icons.AI },
-        ]},
-        { group: "SISTEMA", items: [
-            { id: 'config', label: 'Configuración', icon: Icons.Settings },
         ]},
     ];
 
@@ -300,29 +307,26 @@ export default function DashboardPage() {
                                     {activeTab === 'overview' ? 'Inteligencia de Negocio' : 
                                      activeTab === 'sales' ? 'Análisis Comercial' : 
                                      activeTab === 'expenses' ? 'Control de Operaciones' : 
+                                     activeTab === 'customers' ? 'Análisis de Clientes' : 
                                      activeTab === 'fiscal-summary' ? 'Liquidación de Impuestos' : 
-                                     activeTab === 'annexes' ? 'Libros de IVA Hacienda' :
-                                     activeTab === 'document-health' ? 'Validación de Integridad' :
-                                     activeTab.startsWith('ai') ? 'Motor de Riesgos AI' : 'Configuración'}
+                                     activeTab === 'annexes' ? 'Libros de IVA Hacienda' : 'Configuración'}
                                 </span>
                             </div>
                             <h1 className="text-4xl font-black text-zinc-900 tracking-tight">
                                 {activeTab === 'overview' ? 'Resumen Ejecutivo' : 
                                  activeTab === 'sales' ? 'Rendimiento de Ventas' : 
                                  activeTab === 'expenses' ? 'Distribución de Gastos' : 
+                                 activeTab === 'customers' ? 'Gestión de Cartera' : 
                                  activeTab === 'fiscal-summary' ? 'Estatus Tributario' : 
-                                 activeTab === 'annexes' ? 'Anexos IVA v11.7' :
-                                 activeTab === 'document-health' ? 'Salud Documental' :
-                                 activeTab.startsWith('ai') ? 'Anomalías Detectadas' : 'Preferencias'}
+                                 activeTab === 'annexes' ? 'Anexos IVA v11.7' : 'Preferencias'}
                             </h1>
                             <p className="text-zinc-500 text-sm font-medium max-w-2xl">
                                 {activeTab === 'overview' ? 'Visión integral del desempeño financiero y salud tributaria de la empresa.' : 
                                  activeTab === 'sales' ? 'Seguimiento detallado de ingresos, segmentación de clientes y tendencias comerciales.' : 
                                  activeTab === 'expenses' ? 'Análisis profundo de la estructura de costos y eficiencia operativa.' : 
+                                 activeTab === 'customers' ? 'Seguimiento de comportamiento, rentabilidad y salud de la base de clientes.' : 
                                  activeTab === 'fiscal-summary' ? 'Cálculo proyectado de débitos y créditos fiscales para el periodo actual.' : 
-                                 activeTab === 'annexes' ? 'Consulta de registros oficiales exportables para la declaración jurada.' :
-                                 activeTab === 'document-health' ? 'Diagnóstico de consistencia entre registros internos y documentos legales.' :
-                                 activeTab.startsWith('ai') ? 'Análisis avanzado mediante algoritmos de inteligencia artificial.' : 'Gestión de parámetros globales y conectividad del sistema.'}
+                                 activeTab === 'annexes' ? 'Consulta de registros oficiales exportables para la declaración jurada.' : 'Gestión de parámetros globales y conectividad del sistema.'}
                             </p>
                         </div>
                         
@@ -412,27 +416,85 @@ export default function DashboardPage() {
 
 
                         {activeTab === 'expenses' && (
-                            <div className="space-y-12 animate-in fade-in duration-700">
-                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                                    <div className="bg-white border border-zinc-200 rounded-[2.5rem] p-10 shadow-xl shadow-zinc-200/40">
+                            <div className="space-y-12 animate-in fade-in slide-in-from-bottom-6 duration-700">
+                                <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                                    {/* Donut Chart - Categorías de Gasto */}
+                                    <div className="lg:col-span-4 bg-white border border-zinc-200 rounded-[2.5rem] p-10 shadow-xl shadow-zinc-200/40">
                                         <h3 className="text-sm font-black text-zinc-900 uppercase tracking-widest mb-10 flex items-center gap-3">
-                                            <div className="w-1.5 h-6 bg-red-500 rounded-full" />
-                                            Distribución de Gastos Operativos
+                                            <div className="w-1.5 h-6 bg-indigo-500 rounded-full" />
+                                            Categorías de Gasto
                                         </h3>
-                                        <div className="h-96">
+                                        <div className="h-80">
                                             <TypesBreakdownChart data={typesData?.gastos || []} type="gastos" />
                                         </div>
+                                        <div className="mt-8 space-y-3">
+                                            {typesData?.gastos.slice(0, 3).map((item, i) => (
+                                                <div key={i} className="flex justify-between items-center p-3 bg-zinc-50 rounded-xl">
+                                                    <span className="text-[10px] font-black text-zinc-400 uppercase">{item.label}</span>
+                                                    <span className="text-sm font-black text-zinc-900">${item.value.toLocaleString()}</span>
+                                                </div>
+                                            ))}
+                                        </div>
                                     </div>
-                                    <div className="bg-white border border-zinc-200 rounded-[2.5rem] p-10 shadow-xl shadow-zinc-200/40">
-                                        <h3 className="text-sm font-black text-zinc-900 uppercase tracking-widest mb-10 flex items-center gap-3">
-                                            <div className="w-1.5 h-6 bg-zinc-900 rounded-full" />
-                                            Principales Proveedores
-                                        </h3>
-                                        <div className="flex items-center justify-center h-64 bg-zinc-50 border border-dashed border-zinc-300 rounded-2xl">
-                                            <p className="text-zinc-500 font-medium">Tabla de Egresos</p>
+
+                                    {/* Treemap - Concentración por Proveedor */}
+                                    <div className="lg:col-span-8 bg-white border border-zinc-200 rounded-[2.5rem] p-10 shadow-xl shadow-zinc-200/40">
+                                        <div className="flex justify-between items-end mb-10">
+                                            <div>
+                                                <p className="text-[10px] font-black text-indigo-600 uppercase tracking-widest mb-2">Análisis de Proveedores</p>
+                                                <h3 className="text-2xl font-black text-zinc-900 tracking-tight">Concentración del Gasto</h3>
+                                            </div>
+                                            <div className="text-right">
+                                                <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest block mb-1">Impacto</span>
+                                                <span className="text-xs font-bold text-zinc-600 bg-zinc-100 px-3 py-1 rounded-full">Top 5 + Otros</span>
+                                            </div>
+                                        </div>
+                                        
+                                        <SupplierExpenseTreemap 
+                                            data={supplierMockData}
+                                            onSelectSupplier={(s) => {
+                                                setSelectedSupplier(s);
+                                                setIsSupplierSlideOverOpen(true);
+                                            }}
+                                        />
+
+                                        <div className="mt-8 flex flex-wrap gap-6">
+                                            <div className="flex items-center gap-2">
+                                                <div className="w-3 h-3 rounded-full bg-indigo-600" />
+                                                <span className="text-[10px] font-bold text-zinc-500 uppercase">Socio Estratégico</span>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <div className="w-3 h-3 rounded-full bg-amber-600" />
+                                                <span className="text-[10px] font-bold text-zinc-500 uppercase">Gasto Recurrente</span>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <div className="w-3 h-3 rounded-full bg-teal-600" />
+                                                <span className="text-[10px] font-bold text-zinc-500 uppercase">Eventual</span>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
+
+                                {/* Tabla de Análisis de Proveedores */}
+                                <div className="space-y-6">
+                                    <div className="flex justify-between items-center">
+                                        <h3 className="text-[11px] font-black text-zinc-900 uppercase tracking-[0.2em]">Listado Detallado de Operaciones</h3>
+                                        <button className="text-[10px] font-black text-indigo-600 uppercase tracking-widest hover:underline">Exportar Reporte Maestro</button>
+                                    </div>
+                                    <SupplierAnalysisTable 
+                                        data={supplierMockData}
+                                        onSelectSupplier={(s) => {
+                                            setSelectedSupplier(s);
+                                            setIsSupplierSlideOverOpen(true);
+                                        }}
+                                    />
+                                </div>
+
+                                <SupplierDetailSlideOver 
+                                    supplier={selectedSupplier}
+                                    isOpen={isSupplierSlideOverOpen}
+                                    onClose={() => setIsSupplierSlideOverOpen(false)}
+                                />
                             </div>
                         )}
 
@@ -470,45 +532,67 @@ export default function DashboardPage() {
                             </div>
                         )}
 
-                        {activeTab === 'document-health' && (
-                            <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 animate-in fade-in duration-700">
-                                <div className="lg:col-span-4">
-                                    <DocumentHealthBadge data={taxData?.health} />
-                                </div>
-                                <div className="lg:col-span-8 bg-white border border-zinc-200 rounded-[2.5rem] p-10 shadow-xl shadow-zinc-200/40">
-                                    <h4 className="text-[11px] font-black text-zinc-900 uppercase tracking-widest mb-8">Concentración de Entidades Legales</h4>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
-                                        <div className="flex items-center justify-center h-48 bg-zinc-50 border border-dashed border-zinc-300 rounded-2xl">
-                                            <p className="text-zinc-500 font-medium">Tabla de Clientes</p>
-                                        </div>
-                                        <div className="flex items-center justify-center h-48 bg-zinc-50 border border-dashed border-zinc-300 rounded-2xl">
-                                            <p className="text-zinc-500 font-medium">Tabla de Proveedores</p>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
 
-                        {activeTab.startsWith('ai') && (
-                            <div className="animate-in fade-in duration-700">
-                                 <div className={`bg-white border rounded-[2.5rem] p-10 shadow-2xl relative overflow-hidden ${persona === 'business' ? 'border-emerald-100 shadow-emerald-500/5' : 'border-blue-100 shadow-blue-500/5'}`}>
-                                    <div className={`absolute top-0 right-0 w-96 h-96 rounded-full -mr-48 -mt-48 blur-[120px] ${persona === 'business' ? 'bg-emerald-500/5' : 'bg-blue-500/5'}`} />
-                                    <div className="flex justify-between items-center mb-12 relative z-10">
-                                        <div className="flex items-center gap-4">
-                                            <div className={`w-14 h-14 text-white rounded-2xl flex items-center justify-center shadow-lg ${persona === 'business' ? 'bg-emerald-500 shadow-emerald-500/30' : 'bg-blue-600 shadow-blue-500/30'}`}>
-                                                <Icons.AI />
-                                            </div>
-                                            <div>
-                                                <h2 className="text-2xl font-black text-zinc-900 tracking-tight uppercase">{persona === 'business' ? 'Predicción de Demanda' : 'Auditoría Fiscal AI'}</h2>
-                                                <p className={`text-[10px] font-black uppercase tracking-widest ${persona === 'business' ? 'text-emerald-500' : 'text-blue-600'}`}>{persona === 'business' ? 'Análisis de Tendencias Comerciales' : 'Motor de Detección de Anomalías Tributarias'}</p>
-                                            </div>
+
+
+                        {activeTab === 'customers' && (
+                            <div className="animate-in fade-in slide-in-from-bottom-6 duration-700">
+                                {/* Treemap de Concentración de Ingresos */}
+                                <div className="bg-white border border-zinc-200 rounded-[2rem] p-10 shadow-sm mb-8">
+                                    <div className="flex justify-between items-end mb-8">
+                                        <div>
+                                            <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-2">Análisis de Concentración</p>
+                                            <h3 className="text-2xl font-black text-zinc-900 tracking-tight flex items-center gap-3">
+                                                Ingresos por Cliente
+                                            </h3>
                                         </div>
-                                        <div className={`flex items-center gap-2 px-4 py-1.5 rounded-full border text-[10px] font-black uppercase tracking-widest ${persona === 'business' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-blue-50 text-blue-600 border-blue-100'}`}>
-                                            Isolation Forest 1.2
+                                        <div className="text-right">
+                                            <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest block mb-1">Visualización</span>
+                                            <span className="text-xs font-bold text-zinc-600 bg-zinc-100 px-3 py-1 rounded-full">Top 5 Clientes + Otros</span>
                                         </div>
                                     </div>
-                                    <AnomalyAlertPanel token={authToken} />
-                                 </div>
+
+                                    <CustomerRevenueTreemap 
+                                        data={customerMockData}
+                                        topCount={5}
+                                        onSelectCustomer={(c) => {
+                                            setSelectedCustomer(c);
+                                            setIsSlideOverOpen(true);
+                                        }}
+                                    />
+                                    
+                                    <div className="mt-6 flex items-center gap-6">
+                                        <div className="flex items-center gap-2">
+                                            <div className="w-3 h-3 rounded-full bg-emerald-600" />
+                                            <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Campeones</span>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <div className="w-3 h-3 rounded-full bg-blue-600" />
+                                            <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Leales</span>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <div className="w-3 h-3 rounded-full bg-amber-600" />
+                                            <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">En Riesgo</span>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <div className="w-3 h-3 rounded-full bg-zinc-400" />
+                                            <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Otros</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <CustomerAnalysisTable 
+                                    data={customerMockData} 
+                                    onSelectCustomer={(c) => {
+                                        setSelectedCustomer(c);
+                                        setIsSlideOverOpen(true);
+                                    }}
+                                />
+                                <CustomerDetailSlideOver 
+                                    customer={selectedCustomer}
+                                    isOpen={isSlideOverOpen}
+                                    onClose={() => setIsSlideOverOpen(false)}
+                                />
                             </div>
                         )}
 
