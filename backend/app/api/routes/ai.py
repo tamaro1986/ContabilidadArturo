@@ -12,8 +12,38 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from app.api.dependencies.roles import require_cliente
 from app.services.duckdb_client import get_duckdb_client
 from app.services.anomaly_engine import get_anomalies, run_anomaly_detection
+from app.services.rag_service import ask_financial_assistant
+from app.schemas.ai import ChatRequest, ChatResponse
 
 router = APIRouter()
+
+
+@router.post("/chat", response_model=ChatResponse)
+def financial_chat(
+    request: ChatRequest,
+    user_data: dict = Depends(require_cliente),
+    duck_con=Depends(get_duckdb_client),
+):
+    """
+    Asistente Financiero RAG.
+    Recibe una pregunta en lenguaje natural, la convierte a SQL,
+    consulta DuckDB y devuelve una respuesta contextualizada.
+    """
+    tenant_id = user_data.get("tenant_id")
+    if not tenant_id:
+        raise HTTPException(status_code=400, detail="Tenant ID no encontrado")
+
+    reply, sql_query, results = ask_financial_assistant(
+        question=request.message,
+        tenant_id=tenant_id,
+        duck_con=duck_con
+    )
+
+    return ChatResponse(
+        reply=reply,
+        sql_query=sql_query,
+        results=results
+    )
 
 
 @router.get("/anomalies")

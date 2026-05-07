@@ -10,6 +10,7 @@ import ProfitabilityChart from "../../components/analytics/ProfitabilityChart";
 import TypesBreakdownChart from "../../components/analytics/TypesBreakdownChart";
 import LegalAnnexesTab from "../../components/analytics/LegalAnnexesTab";
 import { AnomalyAlertPanel } from "../../components/ai/AnomalyAlertPanel";
+import AiChatWidget from "../../components/ai/AiChatWidget";
 import { 
     TrendData, 
     BreakdownData, 
@@ -545,6 +546,12 @@ export default function DashboardPage() {
                 <div className={`absolute bottom-0 left-0 w-200 h-200 rounded-full blur-[120px] -ml-60 -mb-60 transition-all duration-1000 ${persona === 'business' ? 'bg-zinc-200/20' : 'bg-indigo-500/10'}`} />
                 <div className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-7xl h-320 rounded-full blur-[180px] opacity-20 transition-all duration-1000 ${persona === 'business' ? 'bg-emerald-100/0' : 'bg-blue-400/5'}`} />
             </div>
+
+            {/* ── AI CHAT WIDGET ────────────────────────────────────────────────── */}
+            <AiChatWidget 
+                token={authToken} 
+                apiUrl={process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1"} 
+            />
         </div>
     );
 }

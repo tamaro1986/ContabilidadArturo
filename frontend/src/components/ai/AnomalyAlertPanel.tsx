@@ -221,7 +221,11 @@ export function AnomalyAlertPanel({ token }: AnomalyAlertPanelProps) {
   const [page, setPage] = useState(0);
   const PAGE_SIZE = 20;
 
-  const headers = useMemo(() => ({ Authorization: `Bearer ${token}`, "Content-Type": "application/json" }), [token]);
+  const headers = useMemo(() => ({ 
+    Authorization: `Bearer ${token}`, 
+    "X-Mock-Tenant-ID": token,
+    "Content-Type": "application/json" 
+  }), [token]);
 
   const fetchData = useCallback(async (isMounted = true) => {
     if (isMounted) {
