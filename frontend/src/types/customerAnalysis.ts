@@ -1,4 +1,4 @@
-export type CustomerStatus = 'Campeones' | 'Leales' | 'En Riesgo';
+export type CustomerStatus = 'Campeones' | 'Leales' | 'En Riesgo' | 'zinc';
 
 export interface Invoice {
     fecha: string;

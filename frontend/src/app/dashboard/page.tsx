@@ -430,7 +430,7 @@ export default function DashboardPage() {
                                         <div className="mt-8 space-y-3">
                                             {typesData?.gastos.slice(0, 3).map((item, i) => (
                                                 <div key={i} className="flex justify-between items-center p-3 bg-zinc-50 rounded-xl">
-                                                    <span className="text-[10px] font-black text-zinc-400 uppercase">{item.label}</span>
+                                                    <span className="text-[10px] font-black text-zinc-400 uppercase">{item.name}</span>
                                                     <span className="text-sm font-black text-zinc-900">${item.value.toLocaleString()}</span>
                                                 </div>
                                             ))}

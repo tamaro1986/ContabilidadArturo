@@ -44,7 +44,7 @@ const SupplierExpenseTreemap: React.FC<SupplierExpenseTreemapProps> = ({
             nombre: 'Otros Proveedores',
             valor: othersExpense,
             pct: (othersExpense / totalExpense) * 100,
-            categoria: 'zinc' as any, // Especial para el bloque Otros
+            categoria: 'zinc', // Bloque consolidado "Otros"
             raw: null as any
         });
     }

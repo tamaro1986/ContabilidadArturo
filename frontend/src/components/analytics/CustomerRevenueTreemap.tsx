@@ -44,7 +44,7 @@ const CustomerRevenueTreemap: React.FC<CustomerRevenueTreemapProps> = ({
             nombre: 'Otros Clientes',
             valor: othersRevenue,
             pct: (othersRevenue / totalRevenue) * 100,
-            estado: 'zinc' as any, // Especial para el bloque Otros
+            estado: 'zinc', // Bloque consolidado "Otros"
             raw: null as any
         });
     }

@@ -1,4 +1,4 @@
-export type SupplierCategory = 'Socio Estratégico' | 'Gasto Recurrente' | 'Eventual';
+export type SupplierCategory = 'Socio Estratégico' | 'Gasto Recurrente' | 'Eventual' | 'zinc';
 
 export interface PurchaseOrder {
     fecha: string;

@@ -9,10 +9,11 @@ interface SupplierAnalysisTableProps {
 }
 
 const CategoryBadge = ({ category }: { category: SupplierCategory }) => {
-    const styles = {
+    const styles: Record<SupplierCategory, string> = {
         'Socio Estratégico': 'bg-indigo-100 text-indigo-700 border-indigo-200',
         'Gasto Recurrente': 'bg-amber-100 text-amber-700 border-amber-200',
         'Eventual': 'bg-teal-100 text-teal-700 border-teal-200',
+        'zinc': 'bg-zinc-100 text-zinc-500 border-zinc-200',
     };
 
     return (
