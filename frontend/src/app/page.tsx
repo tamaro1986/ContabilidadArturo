@@ -111,7 +111,7 @@ export default function Home() {
 
           <h1 className="text-4xl md:text-6xl lg:text-7xl font-black text-primary tracking-tighter leading-[0.95] mb-6">
             Revoluciona tu Despacho Contable con{" "}
-            <span className="bg-gradient-to-r from-secondary to-primary bg-clip-text text-transparent">Inteligencia Artificial</span>
+            <span className="bg-linear-to-r from-secondary to-primary bg-clip-text text-transparent">Inteligencia Artificial</span>
           </h1>
 
           <p className="text-on-surface-variant text-base md:text-lg font-medium max-w-2xl mx-auto mb-10 leading-relaxed">
@@ -153,7 +153,7 @@ export default function Home() {
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8 relative">
             {/* Connector line - desktop only */}
-            <div className="hidden md:block absolute top-16 left-[20%] right-[20%] h-0.5 bg-gradient-to-r from-secondary/20 via-primary/20 to-secondary/20" />
+            <div className="hidden md:block absolute top-16 left-[20%] right-[20%] h-0.5 bg-linear-to-r from-secondary/20 via-primary/20 to-secondary/20" />
 
             {steps.map((step, i) => (
               <div key={i} className="relative flex flex-col items-center text-center group">
@@ -171,7 +171,7 @@ export default function Home() {
 
       {/* ══════════════════════════ 5. FEATURES ═══════════════════════════════ */}
       <section id="features" className="py-20 md:py-28 px-6 relative">
-        <div className="absolute inset-0 bg-gradient-to-b from-surface via-surface-container-low/30 to-surface pointer-events-none" />
+        <div className="absolute inset-0 bg-linear-to-b from-surface via-surface-container-low/30 to-surface pointer-events-none" />
 
         <div className="max-w-6xl mx-auto relative z-10">
           <div className="text-center mb-16">
@@ -184,7 +184,7 @@ export default function Home() {
             {features.map((f, i) => (
               <div key={i} className="group relative bg-white/60 backdrop-blur-xl border border-outline-variant/30 rounded-3xl p-8 shadow-xl shadow-zinc-200/30 hover:shadow-2xl hover:-translate-y-1 transition-all duration-300 overflow-hidden">
                 {/* Gradient accent */}
-                <div className={`absolute inset-0 bg-gradient-to-br ${f.accent} opacity-0 group-hover:opacity-100 transition-opacity duration-500 rounded-3xl`} />
+                <div className={`absolute inset-0 bg-linear-to-br ${f.accent} opacity-0 group-hover:opacity-100 transition-opacity duration-500 rounded-3xl`} />
 
                 <div className="relative z-10">
                   <div className={`w-14 h-14 rounded-2xl ${f.iconBg} flex items-center justify-center shadow-lg mb-6`}>
@@ -229,7 +229,7 @@ export default function Home() {
                 <div className="border-t border-outline-variant/30 pt-6 mb-8 space-y-3.5">
                   {plan.features.map((feat, j) => (
                     <div key={j} className="flex items-start gap-3">
-                      <div className={`w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 ${plan.popular ? "bg-secondary/15 text-secondary" : "bg-primary/10 text-primary"}`}>
+                      <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 mt-0.5 ${plan.popular ? "bg-secondary/15 text-secondary" : "bg-primary/10 text-primary"}`}>
                         <Check size={11} />
                       </div>
                       <span className="text-sm text-on-surface font-medium">{feat}</span>
@@ -251,8 +251,8 @@ export default function Home() {
 
       {/* ══════════════════════════ 7. CTA FINAL ══════════════════════════════ */}
       <section className="py-20 md:py-28 px-6 relative overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-br from-primary to-primary-container" />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-secondary/10 rounded-full blur-[120px] animate-pulse-glow pointer-events-none" />
+        <div className="absolute inset-0 bg-linear-to-br from-primary to-primary-container" />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-150 h-150 bg-secondary/10 rounded-full blur-[120px] animate-pulse-glow pointer-events-none" />
 
         <div className="max-w-2xl mx-auto text-center relative z-10">
           <h2 className="text-3xl md:text-4xl font-black text-on-primary tracking-tighter mb-4">Empieza tu Prueba Gratuita Hoy</h2>

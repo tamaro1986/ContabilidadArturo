@@ -39,7 +39,7 @@ export default function CustomerDetailSlideOver({ customer, isOpen, onClose }: C
     if (!mounted && !isOpen) return null;
 
     return (
-        <div className={`fixed inset-0 z-[200] flex justify-end transition-opacity duration-500 ${isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+        <div className={`fixed inset-0 z-200 flex justify-end transition-opacity duration-500 ${isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
             {/* Backdrop */}
             <div 
                 className="absolute inset-0 bg-zinc-950/40 backdrop-blur-sm"

@@ -39,7 +39,7 @@ const MiniTrendChart = ({ values }: { values: number[] }) => {
 
 export default function CustomerAnalysisTable({ data, onSelectCustomer }: CustomerAnalysisTableProps) {
     return (
-        <div className="bg-white border border-zinc-200 rounded-[2rem] overflow-hidden shadow-sm">
+        <div className="bg-white border border-zinc-200 rounded-4xl overflow-hidden shadow-sm">
             <div className="overflow-x-auto custom-scrollbar">
                 <table className="w-full text-left border-collapse">
                     <thead>

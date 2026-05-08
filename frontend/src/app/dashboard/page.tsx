@@ -26,6 +26,12 @@ import SupplierDetailSlideOver from "../../components/analytics/SupplierDetailSl
 import { supplierMockData } from "../../data/supplierMockData";
 import { SupplierRecord } from "@/types/supplierAnalysis";
 
+import CompanyManager from "../../components/analytics/CompanyManager";
+import SmartCsvUploader from "../../components/analytics/SmartCsvUploader";
+import ValidationAlerts from "../../components/analytics/ValidationAlerts";
+import { companyMockData } from "../../data/companyMockData";
+import { Company, CsvValidationResult } from "@/types/companyTypes";
+
 // ── Icons (SVG Inline - Zero Dependencies - Premium Executive Set) ──────────────────────
 const Icons = {
     Dashboard: () => (
@@ -66,6 +72,12 @@ const Icons = {
     ),
     Plus: () => (
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+    ),
+    Building: () => (
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="2" width="16" height="20" rx="2" ry="2"/><path d="M9 22v-4h6v4"/><path d="M8 6h.01"/><path d="M16 6h.01"/><path d="M12 6h.01"/><path d="M12 10h.01"/><path d="M12 14h.01"/><path d="M16 10h.01"/><path d="M16 14h.01"/><path d="M8 10h.01"/><path d="M8 14h.01"/></svg>
+    ),
+    Upload: () => (
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
     )
 };
 
@@ -89,6 +101,23 @@ export default function DashboardPage() {
     // Supplier Module State
     const [selectedSupplier, setSelectedSupplier] = useState<SupplierRecord | null>(null);
     const [isSupplierSlideOverOpen, setIsSupplierSlideOverOpen] = useState(false);
+
+    // Companies / Upload State
+    const [companiesList, setCompaniesList] = useState<Company[]>(companyMockData);
+    const [selectedCompanyForUpload, setSelectedCompanyForUpload] = useState<Company | null>(null);
+    const [validationResult, setValidationResult] = useState<CsvValidationResult | null>(null);
+
+    const handleAddCompany = (razonSocial: string, nit: string) => {
+        const newCompany: Company = {
+            id: `comp-${Date.now()}`,
+            razonSocial,
+            nit,
+            status: 'pending',
+            lastProcessedMonth: 'Pendiente',
+            totalRecords: 0
+        };
+        setCompaniesList([newCompany, ...companiesList]);
+    };
 
     useEffect(() => {
         const fetchAll = async () => {
@@ -174,6 +203,9 @@ export default function DashboardPage() {
     ];
 
     const fiscalSidebar = [
+        { group: "OPERACIÓN", items: [
+            { id: 'companies', label: 'Gestor de Empresas', icon: Icons.Building },
+        ]},
         { group: "TRIBUTACIÓN", items: [
             { id: 'fiscal-summary', label: 'Liquidación de IVA', icon: Icons.Tax },
             { id: 'annexes', label: 'Anexos de Hacienda', icon: Icons.Tax },
@@ -308,6 +340,7 @@ export default function DashboardPage() {
                                      activeTab === 'sales' ? 'Análisis Comercial' : 
                                      activeTab === 'expenses' ? 'Control de Operaciones' : 
                                      activeTab === 'customers' ? 'Análisis de Clientes' : 
+                                     activeTab === 'companies' ? 'Gestión Documental' : 
                                      activeTab === 'fiscal-summary' ? 'Liquidación de Impuestos' : 
                                      activeTab === 'annexes' ? 'Libros de IVA Hacienda' : 'Configuración'}
                                 </span>
@@ -317,6 +350,7 @@ export default function DashboardPage() {
                                  activeTab === 'sales' ? 'Rendimiento de Ventas' : 
                                  activeTab === 'expenses' ? 'Distribución de Gastos' : 
                                  activeTab === 'customers' ? 'Gestión de Cartera' : 
+                                 activeTab === 'companies' ? 'Portafolio de Empresas' : 
                                  activeTab === 'fiscal-summary' ? 'Estatus Tributario' : 
                                  activeTab === 'annexes' ? 'Anexos IVA v11.7' : 'Preferencias'}
                             </h1>
@@ -325,6 +359,7 @@ export default function DashboardPage() {
                                  activeTab === 'sales' ? 'Seguimiento detallado de ingresos, segmentación de clientes y tendencias comerciales.' : 
                                  activeTab === 'expenses' ? 'Análisis profundo de la estructura de costos y eficiencia operativa.' : 
                                  activeTab === 'customers' ? 'Seguimiento de comportamiento, rentabilidad y salud de la base de clientes.' : 
+                                 activeTab === 'companies' ? 'Gestione sus clientes contables, suba y procese archivos CSV y resuelva alertas de validación antes de la declaración fiscal.' : 
                                  activeTab === 'fiscal-summary' ? 'Cálculo proyectado de débitos y créditos fiscales para el periodo actual.' : 
                                  activeTab === 'annexes' ? 'Consulta de registros oficiales exportables para la declaración jurada.' : 'Gestión de parámetros globales y conectividad del sistema.'}
                             </p>
@@ -499,6 +534,58 @@ export default function DashboardPage() {
                         )}
 
                         {/* FISCAL VIEWS */}
+                        {activeTab === 'companies' && (
+                            <div className="animate-in fade-in duration-700">
+                                {!selectedCompanyForUpload ? (
+                                    <div className="bg-white border border-zinc-200 rounded-[2.5rem] p-10 shadow-2xl shadow-zinc-200/50">
+                                        <CompanyManager 
+                                            companies={companiesList}
+                                            onSelectCompany={(company) => setSelectedCompanyForUpload(company)}
+                                            onAddCompany={handleAddCompany}
+                                        />
+                                    </div>
+                                ) : (
+                                    <div className="space-y-6">
+                                        {!validationResult && (
+                                            <div className="flex items-center gap-4">
+                                                <button 
+                                                    onClick={() => setSelectedCompanyForUpload(null)}
+                                                    className="bg-white border border-zinc-200 text-zinc-600 px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-zinc-50 transition-colors shadow-sm"
+                                                >
+                                                    ← Volver al Gestor
+                                                </button>
+                                                <div className="flex flex-col">
+                                                    <span className="text-xl font-black tracking-tight text-zinc-900">{selectedCompanyForUpload.razonSocial}</span>
+                                                    <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">NIT: {selectedCompanyForUpload.nit}</span>
+                                                </div>
+                                            </div>
+                                        )}
+                                        <div className={`bg-white border border-zinc-200 rounded-[2.5rem] shadow-2xl shadow-zinc-200/50 overflow-hidden ${validationResult ? 'border-none shadow-none bg-transparent' : ''}`}>
+                                            {validationResult ? (
+                                                <ValidationAlerts 
+                                                    result={validationResult}
+                                                    onDismiss={() => {
+                                                        // En una app real, aquí se enviarían los datos a procesar en el backend.
+                                                        setValidationResult(null);
+                                                        setSelectedCompanyForUpload(null);
+                                                    }}
+                                                    onRetry={() => {
+                                                        setValidationResult(null);
+                                                    }}
+                                                />
+                                            ) : (
+                                                <SmartCsvUploader 
+                                                    company={selectedCompanyForUpload}
+                                                    onValidationComplete={(result) => setValidationResult(result)}
+                                                    onBack={() => setSelectedCompanyForUpload(null)}
+                                                />
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
                         {activeTab === 'fiscal-summary' && (
                             <div className="space-y-10 animate-in fade-in duration-700">
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
@@ -538,7 +625,7 @@ export default function DashboardPage() {
                         {activeTab === 'customers' && (
                             <div className="animate-in fade-in slide-in-from-bottom-6 duration-700">
                                 {/* Treemap de Concentración de Ingresos */}
-                                <div className="bg-white border border-zinc-200 rounded-[2rem] p-10 shadow-sm mb-8">
+                                <div className="bg-white border border-zinc-200 rounded-4xl p-10 shadow-sm mb-8">
                                     <div className="flex justify-between items-end mb-8">
                                         <div>
                                             <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-2">Análisis de Concentración</p>
