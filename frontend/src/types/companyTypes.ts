@@ -1,15 +1,29 @@
 // frontend/src/types/companyTypes.ts
 export interface Company {
   id: string;
-  razonSocial: string;
-  nit: string;           // 14 dígitos, formato: 0614-DDMMAA-XXX-X
-  lastProcessedMonth: string; // "Mayo 2024"
+  tenant_id: string;      // Relación con el despacho contable
+  user_id: string;        // Usuario que registró la empresa
+  name: string;           // Razón Social (Mapeado a 'name' en DB)
+  nit: string;            // 14 dígitos, formato: 0614-DDMMAA-XXX-X
+  created_at: string;
+  updated_at: string;
+  
+  // Campos auxiliares para la UI (pueden ser nulos si no se han procesado datos)
+  lastProcessedMonth?: string; // "Mayo 2024"
   status: CompanyStatus;
   totalRecords: number;
-  createdAt: string;
 }
 
 export type CompanyStatus = 'active' | 'pending' | 'error';
+
+export interface TaxDocument {
+  id: string;
+  tenant_id: string;
+  company_id: string;
+  document_type: AnnexUploadType;
+  status: 'pending' | 'processed' | 'error';
+  created_at: string;
+}
 
 // Tipos de Anexo IVA (Ministerio de Hacienda)
 export type AnnexUploadType = 'ventas-contribuyentes' | 'ventas-consumidor' | 'compras';

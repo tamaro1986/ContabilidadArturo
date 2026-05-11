@@ -1,8 +1,8 @@
 'use client'
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { supabase } from '@/utils/supabase'
+import { useState, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { supabase } from '@/lib/supabaseClient'
 // ── Inline SVG Icons ───────────────────────────────────────────────────────────
 const ShieldCheck = ({ size = 32, className = "" }: { size?: number; className?: string }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
@@ -20,12 +20,14 @@ const ArrowRight = ({ size = 18, className = "" }: { size?: number; className?: 
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
 );
 
-export default function LoginPage() {
+function LoginContent() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const registered = searchParams.get('registered')
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -73,6 +75,13 @@ export default function LoginPage() {
             <div className="mb-6 p-4 bg-error-container border border-error border-opacity-20 rounded-md text-on-error-container text-xs font-bold flex items-center gap-3 animate-shake">
               <div className="w-1.5 h-1.5 rounded-full bg-error"></div>
               {error}
+            </div>
+          )}
+
+          {registered && (
+            <div className="mb-6 p-4 bg-emerald-50 border border-emerald-200 rounded-md text-emerald-800 text-xs font-bold flex items-center gap-3">
+              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div>
+              Registro completado. Por favor, revise su correo para confirmar su cuenta.
             </div>
           )}
 
@@ -149,5 +158,17 @@ export default function LoginPage() {
         </p>
       </div>
     </div>
+  )
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-slate-950">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-emerald-500"></div>
+      </div>
+    }>
+      <LoginContent />
+    </Suspense>
   )
 }

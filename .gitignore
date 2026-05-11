@@ -43,3 +43,6 @@ backend/*.sqlite3
 # Agent related
 .agents/
 .gemini/
+
+# Supabase temp
+supabase/.temp/

@@ -23,16 +23,25 @@ const CloseIcon = () => (
 );
 
 export default function SupplierDetailSlideOver({ supplier, isOpen, onClose }: SupplierDetailSlideOverProps) {
-    const [mounted, setMounted] = useState(false);
+    const [mounted, setMounted] = useState(isOpen);
+
+    // Sync mounted state during render if isOpen changes to true
+    if (isOpen && !mounted) {
+        setMounted(true);
+    }
 
     useEffect(() => {
         if (isOpen) {
-            setMounted(true);
             document.body.style.overflow = 'hidden';
         } else {
-            const timer = setTimeout(() => setMounted(false), 500);
             document.body.style.overflow = 'unset';
-            return () => clearTimeout(timer);
+            const timer = setTimeout(() => {
+                setMounted(false);
+            }, 500);
+            return () => {
+                clearTimeout(timer);
+                document.body.style.overflow = 'unset';
+            };
         }
     }, [isOpen]);
 

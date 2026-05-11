@@ -1,10 +1,49 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from supabase import Client
-from app.schemas.auth import UserLogin, UserRegister, Token, UserResponse
-from app.services.supabase_client import get_supabase_client
+from app.schemas.auth import UserLogin, UserRegister, Token, UserResponse, UserInvite
+from app.services.supabase_client import get_supabase_client, get_supabase_admin_client
 from app.core.security import get_current_user
 
 router = APIRouter()
+
+@router.post("/invite")
+def invite_user(
+    invite_in: UserInvite,
+    current_user = Depends(get_current_user),
+    supabase: Client = Depends(get_supabase_client),
+    admin_supabase: Client = Depends(get_supabase_admin_client)
+):
+    # 1. Fetch current user profile to verify role and get tenant_id
+    profile = supabase.table("user_profiles").select("*").eq("id", current_user.id).single().execute()
+    if not profile.data or profile.data.get("role") not in ["contador", "administrador"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No tiene permisos para realizar invitaciones."
+        )
+    
+    tenant_id = profile.data.get("tenant_id")
+
+    try:
+        # 2. Perform the invitation via Supabase Auth Admin API
+        # We inject the tenant_id and role into the raw_user_meta_data
+        # so the DB trigger can pick it up.
+        admin_supabase.auth.admin.invite_user_by_email(
+            invite_in.email,
+            {
+                "data": {
+                    "full_name": invite_in.full_name,
+                    "role": invite_in.role,
+                    "tenant_id": tenant_id
+                },
+                "redirectTo": "http://localhost:3000/auth/set-password" # Base URL should be dynamic in prod
+            }
+        )
+        return {"message": f"Invitación enviada exitosamente a {invite_in.email}"}
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
 
 @router.post("/register")
 def register(

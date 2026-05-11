@@ -14,6 +14,15 @@ interface CustomerRevenueTreemapProps {
  * Visualiza la concentración de ingresos mediante bloques proporcionales.
  * Utiliza un layout de Flexbox puro para evitar dependencias externas.
  */
+interface TreemapNode {
+    id: string | number;
+    nombre: string;
+    valor: number;
+    pct: number;
+    estado: string;
+    raw: CustomerRecord | null;
+}
+
 const CustomerRevenueTreemap: React.FC<CustomerRevenueTreemapProps> = ({ 
     data, 
     topCount = 5,
@@ -29,7 +38,7 @@ const CustomerRevenueTreemap: React.FC<CustomerRevenueTreemapProps> = ({
     const totalRevenue = sortedData.reduce((acc, curr) => acc + curr.gananciaHistorica, 0);
 
     // 3. Crear nodos para el treemap
-    const nodes = topClients.map(c => ({
+    const nodes: TreemapNode[] = topClients.map(c => ({
         id: c.id,
         nombre: c.nombre,
         valor: c.gananciaHistorica,
@@ -45,7 +54,7 @@ const CustomerRevenueTreemap: React.FC<CustomerRevenueTreemapProps> = ({
             valor: othersRevenue,
             pct: (othersRevenue / totalRevenue) * 100,
             estado: 'zinc', // Bloque consolidado "Otros"
-            raw: null as any
+            raw: null
         });
     }
 

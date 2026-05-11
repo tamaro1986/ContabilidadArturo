@@ -1,14 +1,14 @@
 -- Configuración inicial para la base de datos de Contabilidad (SaaS Multi-tenant)
 
--- Extensión para usar gen_random_uuid() si no está habilitada
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+-- Extensión para pgcrypto (opcional en versiones modernas pero útil para otras funciones criptográficas)
+-- CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
 -- 1. Tipo Enum para los roles
 CREATE TYPE user_role AS ENUM ('contador', 'cliente');
 
 -- 2. Tabla Tenants (Empresas/Firmas contables)
 CREATE TABLE public.tenants (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name VARCHAR(255) NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -27,7 +27,7 @@ CREATE TABLE public.user_profiles (
 
 -- 4. Tabla de Ejemplo para demostrar el aislamiento (Facturas o Documentos)
 CREATE TABLE public.client_documents (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
     client_id UUID NOT NULL REFERENCES public.user_profiles(id) ON DELETE CASCADE,
     title VARCHAR(255) NOT NULL,

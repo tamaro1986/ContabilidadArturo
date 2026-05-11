@@ -1,6 +1,6 @@
 -- 1. Tabla de Registros Financieros (Ventas / Analítica)
 CREATE TABLE public.financial_records (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
     client_id VARCHAR(255) NOT NULL,
     amount NUMERIC(15, 2) NOT NULL,

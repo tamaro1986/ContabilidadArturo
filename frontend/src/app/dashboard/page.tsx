@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase } from "@/utils/supabase";
+import { supabase } from "@/lib/supabaseClient";
+import AuthGuard from "../../components/auth/AuthGuard";
 import TaxLiquidationCard from "../../components/analytics/TaxLiquidationCard";
 
 import FinancialTrendsChart from "../../components/analytics/FinancialTrendsChart";
@@ -29,8 +30,10 @@ import { SupplierRecord } from "@/types/supplierAnalysis";
 import CompanyManager from "../../components/analytics/CompanyManager";
 import SmartCsvUploader from "../../components/analytics/SmartCsvUploader";
 import ValidationAlerts from "../../components/analytics/ValidationAlerts";
-import { companyMockData } from "../../data/companyMockData";
 import { Company, CsvValidationResult } from "@/types/companyTypes";
+import Paywall from "../../components/auth/Paywall";
+import AdminPanel from "../../components/admin/AdminPanel";
+import UserInvitationForm from "../../components/auth/UserInvitationForm";
 
 // ── Icons (SVG Inline - Zero Dependencies - Premium Executive Set) ──────────────────────
 const Icons = {
@@ -103,42 +106,94 @@ export default function DashboardPage() {
     const [isSupplierSlideOverOpen, setIsSupplierSlideOverOpen] = useState(false);
 
     // Companies / Upload State
-    const [companiesList, setCompaniesList] = useState<Company[]>(companyMockData);
+    const [companiesList, setCompaniesList] = useState<Company[]>([]);
     const [selectedCompanyForUpload, setSelectedCompanyForUpload] = useState<Company | null>(null);
     const [validationResult, setValidationResult] = useState<CsvValidationResult | null>(null);
 
-    const handleAddCompany = (razonSocial: string, nit: string) => {
-        const newCompany: Company = {
-            id: `comp-${Date.now()}`,
-            razonSocial,
-            nit,
-            status: 'pending',
-            lastProcessedMonth: 'Pendiente',
-            totalRecords: 0
-        };
-        setCompaniesList([newCompany, ...companiesList]);
+    // Trial / Admin State
+    const [userProfile, setUserProfile] = useState<any>(null);
+    const [session, setSession] = useState<any>(null);
+    const [tenantData, setTenantData] = useState<any>(null);
+    const [isTrialExpired, setIsTrialExpired] = useState(false);
+    const [isAdmin, setIsAdmin] = useState(false);
+
+    const handleAddCompany = async (name: string, nit: string) => {
+        if (!userProfile) return;
+        
+        try {
+            const { data, error } = await supabase
+                .from('companies')
+                .insert([{
+                    tenant_id: userProfile.tenant_id,
+                    user_id: userProfile.id,
+                    name,
+                    nit,
+                    status: 'active'
+                }])
+                .select()
+                .single();
+
+            if (error) throw error;
+            if (data) setCompaniesList([data as any, ...companiesList]);
+        } catch (err) {
+            console.error("Error adding company:", err);
+            alert("No se pudo registrar la empresa.");
+        }
+    };
+
+    const handleLogout = async () => {
+        try {
+            await supabase.auth.signOut();
+        } catch (err) {
+            console.error("Error al cerrar sesión:", err);
+        }
     };
 
     useEffect(() => {
-        const fetchAll = async () => {
+    const fetchAll = async () => {
             try {
-                let headers: HeadersInit = {};
-                const mockTenantId = typeof window !== 'undefined' ? localStorage.getItem("X-Mock-Tenant-ID") : null;
-                
-                if (mockTenantId) {
-                    headers = { "X-Mock-Tenant-ID": mockTenantId };
-                    setAuthToken(mockTenantId);
-                } else {
-                    const { data: sessionData } = await supabase.auth.getSession();
-                    const token = sessionData?.session?.access_token;
-                    if (!token) {
-                        setError("No autenticado");
-                        setLoading(false);
-                        return;
-                    }
-                    headers = { "Authorization": `Bearer ${token}` };
-                    setAuthToken(token);
+                const { data: { session: currentSession } } = await supabase.auth.getSession();
+                if (!currentSession) {
+                    setError("No autenticado");
+                    setLoading(false);
+                    return;
                 }
+                setSession(currentSession);
+
+                // 1. Fetch User Profile and Tenant
+                const { data: profile } = await supabase
+                    .from('user_profiles')
+                    .select('*, tenants(*)')
+                    .eq('id', currentSession.user.id)
+                    .single();
+
+                // Validación de Administrador Maestro (Independiente del Perfil en BD)
+                const userEmail = currentSession.user.email?.toLowerCase() || "";
+                const isMasterAdmin = userEmail === 'garcia.integrum1@gmail.com';
+                setIsAdmin(isMasterAdmin); // Activación inmediata por correo
+
+                if (profile) {
+                    console.log("Datos de Perfil cargados:", profile);
+                    setUserProfile(profile);
+                    setTenantData(profile.tenants);
+                    
+                    // Si el perfil dice que es administrador, también lo activamos
+                    if (profile.role === 'administrador') setIsAdmin(true);
+                    
+                    const trialEnds = new Date(profile.tenants.trial_ends_at);
+                    setIsTrialExpired(trialEnds < new Date());
+                }
+
+                // 2. Fetch Companies
+                const { data: companies } = await supabase
+                    .from('companies')
+                    .select('*')
+                    .order('name');
+                setCompaniesList(companies || []);
+
+                // 3. Fetch Analytics from Backend
+                let headers: HeadersInit = { "Authorization": `Bearer ${currentSession.access_token}` };
+                setAuthToken(currentSession.access_token);
 
                 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
                 
@@ -150,7 +205,6 @@ export default function DashboardPage() {
                     fetch(`${API_URL}/analytics/tax-summary/document-health`, { headers }).then(r => r.json())
                 ]);
 
-
                 setTrendsData(trends.data || []);
                 setTypesData(types.data || { ventas: [], gastos: [] });
                 setTaxData({
@@ -161,8 +215,6 @@ export default function DashboardPage() {
 
             } catch (err: unknown) {
                 console.error("Fetch Error:", err);
-                // No bloqueamos la interfaz, permitimos que cargue con estados vacíos
-                // para que el usuario pueda ver el módulo de clientes (que es mock)
                 setError(null); 
             } finally {
                 setLoading(false);
@@ -170,6 +222,11 @@ export default function DashboardPage() {
         };
         fetchAll();
     }, []);
+
+    // ── Paywall Guard ──────────────────────────────────────────────────────────────
+    if (isTrialExpired && !loading) {
+        return <Paywall tenantId={userProfile?.tenant_id} onSuccess={() => window.location.reload()} />;
+    }
 
     if (loading) return (
         <div className="min-h-screen flex flex-col items-center justify-center bg-zinc-950 transition-colors duration-500">
@@ -203,9 +260,6 @@ export default function DashboardPage() {
     ];
 
     const fiscalSidebar = [
-        { group: "OPERACIÓN", items: [
-            { id: 'companies', label: 'Gestor de Empresas', icon: Icons.Building },
-        ]},
         { group: "TRIBUTACIÓN", items: [
             { id: 'fiscal-summary', label: 'Liquidación de IVA', icon: Icons.Tax },
             { id: 'annexes', label: 'Anexos de Hacienda', icon: Icons.Tax },
@@ -216,513 +270,592 @@ export default function DashboardPage() {
 
 
     return (
-        <div className="min-h-screen bg-[#f8fafc] flex selection:bg-emerald-500/30">
-            {/* ── PERSISTENT SIDEBAR ────────────────────────────────────────────── */}
-            <aside className={`bg-zinc-950 text-white transition-all duration-500 ease-in-out flex flex-col z-50 ${sidebarOpen ? 'w-72' : 'w-20'}`}>
-                {/* Logo Area */}
-                <div className="p-6 h-20 flex items-center gap-4 overflow-hidden border-b border-white/5">
-                    <div className={`min-w-10 h-10 rounded-xl flex items-center justify-center text-white font-black text-xl shadow-lg transition-all duration-700 ${persona === 'business' ? 'bg-linear-to-br from-emerald-400 to-emerald-600 shadow-emerald-500/20' : 'bg-linear-to-br from-blue-500 to-blue-700 shadow-blue-500/20'}`}>A</div>
-                    {sidebarOpen && (
-                        <div className="flex flex-col leading-none">
-                            <span className="text-lg font-black tracking-tight text-white uppercase">Arturo</span>
-                            <span className="text-[10px] font-bold tracking-[0.3em] text-emerald-500 uppercase opacity-80">Integrum</span>
-                        </div>
-                    )}
-                </div>
-
-                {/* Nav Items */}
-                <div className="flex-1 py-8 px-4 space-y-8 overflow-y-auto">
-                    {sidebarItems.map((section, idx) => (
-                        <div key={idx} className="space-y-2">
-                            {sidebarOpen && <p className="px-4 text-[10px] font-black text-zinc-500 tracking-[0.2em] uppercase mb-4">{section.group}</p>}
-                            {section.items.map((item) => (
-                                <button
-                                    key={item.id}
-                                    onClick={() => setActiveTab(item.id)}
-                                    className={`w-full flex items-center gap-4 px-4 py-3.5 rounded-xl transition-all duration-300 group relative ${activeTab === item.id ? (persona === 'business' ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20' : 'bg-blue-600 text-white shadow-lg shadow-blue-600/20') : 'text-zinc-400 hover:bg-white/5 hover:text-white'}`}
-                                >
-                                    <div className={`transition-transform duration-300 ${activeTab === item.id ? 'scale-110' : 'group-hover:scale-110'}`}>
-                                        <item.icon />
-                                    </div>
-                                    {sidebarOpen && <span className="text-sm font-bold tracking-tight">{item.label}</span>}
-                                    {activeTab === item.id && !sidebarOpen && (
-                                        <div className="absolute left-full ml-4 px-3 py-1 bg-zinc-900 text-white text-xs font-bold rounded-md whitespace-nowrap shadow-xl">
-                                            {item.label}
-                                        </div>
-                                    )}
-                                </button>
-                            ))}
-                        </div>
-                    ))}
-                </div>
-
-                {/* Bottom Profile/Settings */}
-                <div className="p-4 border-t border-white/5 space-y-2">
-                    <button 
-                        onClick={() => setActiveTab('config')}
-                        className={`w-full flex items-center gap-4 px-4 py-3 rounded-xl transition-all ${activeTab === 'config' ? (persona === 'business' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-blue-500/10 text-blue-500') : 'text-zinc-400 hover:bg-white/5'}`}
-                    >
-                        <Icons.Settings />
-                        {sidebarOpen && <span className="text-sm font-bold">Configuración</span>}
-                    </button>
-                    <button className="w-full flex items-center gap-4 px-4 py-3 rounded-xl text-zinc-400 hover:bg-red-500/10 hover:text-red-500 transition-all group">
-                        <Icons.Logout />
-                        {sidebarOpen && <span className="text-sm font-bold">Cerrar Sesión</span>}
-                    </button>
-                </div>
-            </aside>
-
-            {/* ── MAIN VIEWPORT ─────────────────────────────────────────────────── */}
-            <div className="flex-1 flex flex-col h-screen overflow-hidden">
-                {/* ── PREMIUM HEADER ────────────────────────────────────────────────── */}
-                <header className="bg-white/70 backdrop-blur-md border-b border-zinc-200 h-20 px-8 flex items-center justify-between z-40 sticky top-0">
-                    <div className="flex items-center gap-6">
-                        <button 
-                            onClick={() => setSidebarOpen(!sidebarOpen)}
-                            className="p-2 hover:bg-zinc-100 rounded-lg transition-colors text-zinc-400"
-                        >
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
-                        </button>
-                        
-                        {/* Persona Switcher - Premium Toggle */}
-                        <div className="flex items-center gap-1 bg-zinc-100 p-1.5 rounded-2xl shadow-inner border border-zinc-200">
-                            <button 
-                                onClick={() => { setPersona('business'); setActiveTab('overview'); }}
-                                className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all duration-500 flex items-center gap-2 ${persona === 'business' ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20 scale-105' : 'text-zinc-500 hover:text-zinc-900'}`}
-                            >
-                                <Icons.Dashboard />
-                                Perspectiva de Negocio
-                            </button>
-                            <button 
-                                onClick={() => { setPersona('fiscal'); setActiveTab('fiscal-summary'); }}
-                                className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all duration-500 flex items-center gap-2 ${persona === 'fiscal' ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20 scale-105' : 'text-zinc-500 hover:text-zinc-900'}`}
-                            >
-                                <Icons.Tax />
-                                Cumplimiento Fiscal
-                            </button>
-                        </div>
-                    </div>
-
-                    <div className="flex items-center gap-6">
-                        <div className="flex items-center gap-2 bg-emerald-50 text-emerald-700 px-4 py-1.5 rounded-full border border-emerald-100">
-                            <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
-                            <span className="text-[10px] font-black uppercase tracking-widest">En Vivo: Mayo 2024</span>
-                        </div>
-                        
-                        <div className="h-8 w-px bg-zinc-200" />
-
-                        <div className="flex items-center gap-4">
-                            <button className="relative p-2 text-zinc-400 hover:text-zinc-900 transition-colors">
-                                <Icons.Bell />
-                                <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border-2 border-white" />
-                            </button>
-                            <div className="flex items-center gap-3 pl-2 group cursor-pointer">
-                                <div className="text-right hidden sm:block">
-                                    <p className="text-sm font-bold text-zinc-900 leading-none">Arturo Garcia</p>
-                                    <p className="text-[10px] font-black text-zinc-400 uppercase tracking-tighter mt-1">Socio Principal</p>
-                                </div>
-                                <div className="w-10 h-10 rounded-xl bg-linear-to-br from-emerald-400 to-emerald-600 flex items-center justify-center text-white shadow-lg shadow-emerald-500/20 group-hover:scale-105 transition-transform">
-                                    <Icons.User />
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </header>
-
-                {/* ── CONTENT AREA ──────────────────────────────────────────────────── */}
-                <main className="flex-1 overflow-y-auto p-8 lg:p-12 scroll-smooth">
-                    {/* Page Header */}
-                    <div className="mb-12 flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
-                        <div className="space-y-2">
-                            <div className="flex items-center gap-2">
-                                <span className={`text-[10px] font-black uppercase tracking-[0.3em] ${persona === 'business' ? 'text-emerald-500' : 'text-blue-600'}`}>
-                                    {activeTab === 'overview' ? 'Inteligencia de Negocio' : 
-                                     activeTab === 'sales' ? 'Análisis Comercial' : 
-                                     activeTab === 'expenses' ? 'Control de Operaciones' : 
-                                     activeTab === 'customers' ? 'Análisis de Clientes' : 
-                                     activeTab === 'companies' ? 'Gestión Documental' : 
-                                     activeTab === 'fiscal-summary' ? 'Liquidación de Impuestos' : 
-                                     activeTab === 'annexes' ? 'Libros de IVA Hacienda' : 'Configuración'}
-                                </span>
-                            </div>
-                            <h1 className="text-4xl font-black text-zinc-900 tracking-tight">
-                                {activeTab === 'overview' ? 'Resumen Ejecutivo' : 
-                                 activeTab === 'sales' ? 'Rendimiento de Ventas' : 
-                                 activeTab === 'expenses' ? 'Distribución de Gastos' : 
-                                 activeTab === 'customers' ? 'Gestión de Cartera' : 
-                                 activeTab === 'companies' ? 'Portafolio de Empresas' : 
-                                 activeTab === 'fiscal-summary' ? 'Estatus Tributario' : 
-                                 activeTab === 'annexes' ? 'Anexos IVA v11.7' : 'Preferencias'}
-                            </h1>
-                            <p className="text-zinc-500 text-sm font-medium max-w-2xl">
-                                {activeTab === 'overview' ? 'Visión integral del desempeño financiero y salud tributaria de la empresa.' : 
-                                 activeTab === 'sales' ? 'Seguimiento detallado de ingresos, segmentación de clientes y tendencias comerciales.' : 
-                                 activeTab === 'expenses' ? 'Análisis profundo de la estructura de costos y eficiencia operativa.' : 
-                                 activeTab === 'customers' ? 'Seguimiento de comportamiento, rentabilidad y salud de la base de clientes.' : 
-                                 activeTab === 'companies' ? 'Gestione sus clientes contables, suba y procese archivos CSV y resuelva alertas de validación antes de la declaración fiscal.' : 
-                                 activeTab === 'fiscal-summary' ? 'Cálculo proyectado de débitos y créditos fiscales para el periodo actual.' : 
-                                 activeTab === 'annexes' ? 'Consulta de registros oficiales exportables para la declaración jurada.' : 'Gestión de parámetros globales y conectividad del sistema.'}
-                            </p>
-                        </div>
-                        
-                        <div className="flex gap-3">
-                            <button className="bg-white border border-zinc-200 text-zinc-900 px-6 py-3 rounded-xl text-xs font-black uppercase tracking-widest flex items-center gap-3 hover:bg-zinc-50 transition-all shadow-sm">
-                                <Icons.Calendar />
-                                Mayo 2024
-                            </button>
-                            <button className={`px-6 py-3 rounded-xl text-xs font-black uppercase tracking-widest flex items-center gap-3 transition-all shadow-lg ${persona === 'business' ? 'bg-emerald-500 text-white shadow-emerald-500/20 hover:bg-emerald-600' : 'bg-blue-600 text-white shadow-blue-600/20 hover:bg-blue-700'}`}>
-                                <Icons.Plus />
-                                {persona === 'business' ? 'Nuevo Movimiento' : 'Nueva Factura'}
-                            </button>
-                        </div>
-                    </div>
-
-                    {/* View Switching Logic */}
-                    <div className="transition-all duration-700 animate-in fade-in slide-in-from-bottom-6">
-                        
-                        {activeTab === 'overview' && (
-                            <div className="space-y-12">
-                                {/* Key Indicators Grid */}
-                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
-                                    {[
-                                        { label: 'Facturación Mensual', val: trendsData[trendsData.length-1]?.ventas_actual || 0, trend: '+12.5%', color: 'text-zinc-900', bg: 'bg-white' },
-                                        { label: 'Gastos Operativos', val: trendsData[trendsData.length-1]?.gastos_actual || 0, trend: '-3.2%', color: 'text-zinc-900', bg: 'bg-white' },
-                                        { label: 'Margen de Utilidad', val: (trendsData[trendsData.length-1]?.ventas_actual || 0) - (trendsData[trendsData.length-1]?.gastos_actual || 0), trend: '+8.1%', color: 'text-emerald-600', bg: 'bg-emerald-50/50 border-emerald-100' },
-                                        { label: persona === 'business' ? 'Ticket Promedio' : 'Provisión IVA', val: persona === 'business' ? 124.50 : (taxData?.liquidation?.debito_fiscal || 0), trend: persona === 'business' ? '+4.2%' : 'A Tiempo', color: persona === 'business' ? 'text-emerald-600' : 'text-blue-600', bg: persona === 'business' ? 'bg-emerald-50/50 border-emerald-100' : 'bg-blue-50/50 border-blue-100' }
-                                    ].map((stat, i) => (
-                                        <div key={i} className={`${stat.bg} border border-zinc-200/60 rounded-4xl p-8 shadow-sm group hover:shadow-xl hover:shadow-zinc-200/50 transition-all duration-500`}>
-                                            <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-3">{stat.label}</p>
-                                            <div className="flex items-end justify-between">
-                                                <p className={`text-3xl font-black tabular-nums ${stat.color}`}>${stat.val.toLocaleString()}</p>
-                                                <span className={`text-[10px] font-black px-2.5 py-1 rounded-full ${stat.trend.startsWith('+') ? 'bg-emerald-100 text-emerald-700' : stat.trend.startsWith('-') ? 'bg-red-100 text-red-700' : 'bg-zinc-100 text-zinc-600'}`}>
-                                                    {stat.trend}
-                                                </span>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-
-                                {/* Main Charts Grid */}
-                                <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-                                    {/* Financial Trend - Glassmorphism Card */}
-                                    <div className="lg:col-span-8 bg-white/70 backdrop-blur-xl border border-white/40 rounded-[2.5rem] p-10 shadow-2xl shadow-zinc-200/40 relative overflow-hidden group">
-                                        <div className="absolute top-0 right-0 w-80 h-80 bg-emerald-500/5 rounded-full -mr-32 -mt-32 blur-[100px] group-hover:bg-emerald-500/10 transition-colors duration-1000" />
-                                        <div className="relative z-10">
-                                            <div className="flex justify-between items-center mb-10">
-                                                <h3 className="text-sm font-black text-zinc-900 uppercase tracking-widest flex items-center gap-3">
-                                                    <div className="w-1.5 h-6 bg-emerald-500 rounded-full" />
-                                                    Tendencia Financiera Consolidada
-                                                </h3>
-                                                <div className="flex gap-4">
-                                                    <span className="flex items-center gap-2 text-[10px] font-black uppercase text-emerald-600">
-                                                        <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-sm shadow-emerald-500/30" /> Ingresos
-                                                    </span>
-                                                    <span className="flex items-center gap-2 text-[10px] font-black uppercase text-zinc-300">
-                                                        <div className="w-2.5 h-2.5 rounded-full bg-zinc-300" /> Egresos
-                                                    </span>
-                                                </div>
-                                            </div>
-                                            <div className="h-96 w-full">
-                                                <FinancialTrendsChart data={trendsData} />
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    {/* Sidebar Analytics */}
-                                    <div className="lg:col-span-4 space-y-8">
-                                        <div className="bg-zinc-900 text-white rounded-[2.5rem] p-10 shadow-2xl shadow-zinc-900/20 flex flex-col h-full relative overflow-hidden">
-                                            <div className="absolute bottom-0 right-0 w-32 h-32 bg-emerald-500/20 rounded-full -mb-16 -mr-16 blur-3xl" />
-                                            <h3 className="text-sm font-black uppercase tracking-widest mb-10 text-emerald-400">Estado de Rentabilidad</h3>
-                                            <div className="flex-1 flex items-center justify-center">
-                                                <ProfitabilityChart data={trendsData} />
-                                            </div>
-                                            <div className="mt-8 pt-8 border-t border-white/5 space-y-4">
-                                                <div className="flex justify-between items-center">
-                                                    <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Resultado Neto</p>
-                                                    <p className="text-xl font-black text-white">${((trendsData[trendsData.length-1]?.ventas_actual || 0) - (trendsData[trendsData.length-1]?.gastos_actual || 0)).toLocaleString()}</p>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
+        <AuthGuard>
+            <div className="min-h-screen bg-[#f8fafc] flex selection:bg-emerald-500/30">
+                {/* ── PERSISTENT SIDEBAR ────────────────────────────────────────────── */}
+                <aside className={`bg-zinc-950 text-white transition-all duration-500 ease-in-out flex flex-col z-50 ${sidebarOpen ? 'w-72' : 'w-20'}`}>
+                    {/* Logo Area */}
+                    <div className="p-6 h-20 flex items-center gap-4 overflow-hidden border-b border-white/5">
+                        <div className={`min-w-10 h-10 rounded-xl flex items-center justify-center text-white font-black text-xl shadow-lg transition-all duration-700 ${persona === 'business' ? 'bg-linear-to-br from-emerald-400 to-emerald-600 shadow-emerald-500/20' : 'bg-linear-to-br from-blue-500 to-blue-700 shadow-blue-500/20'}`}>A</div>
+                        {sidebarOpen && (
+                            <div className="flex flex-col leading-none">
+                                <span className="text-lg font-black tracking-tight text-white uppercase">Arturo</span>
+                                <span className="text-[10px] font-bold tracking-[0.3em] text-emerald-500 uppercase opacity-80">Integrum</span>
                             </div>
                         )}
+                    </div>
 
-
-
-                        {activeTab === 'expenses' && (
-                            <div className="space-y-12 animate-in fade-in slide-in-from-bottom-6 duration-700">
-                                <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-                                    {/* Donut Chart - Categorías de Gasto */}
-                                    <div className="lg:col-span-4 bg-white border border-zinc-200 rounded-[2.5rem] p-10 shadow-xl shadow-zinc-200/40">
-                                        <h3 className="text-sm font-black text-zinc-900 uppercase tracking-widest mb-10 flex items-center gap-3">
-                                            <div className="w-1.5 h-6 bg-indigo-500 rounded-full" />
-                                            Categorías de Gasto
-                                        </h3>
-                                        <div className="h-80">
-                                            <TypesBreakdownChart data={typesData?.gastos || []} type="gastos" />
+                    {/* Nav Items */}
+                    <div className="flex-1 py-8 px-4 space-y-8 overflow-y-auto">
+                        {sidebarItems.map((section, idx) => (
+                            <div key={idx} className="space-y-2">
+                                {sidebarOpen && <p className="px-4 text-[10px] font-black text-zinc-500 tracking-[0.2em] uppercase mb-4">{section.group}</p>}
+                                {section.items.map((item) => (
+                                    <button
+                                        key={item.id}
+                                        onClick={() => setActiveTab(item.id)}
+                                        className={`w-full flex items-center gap-4 px-4 py-3.5 rounded-xl transition-all duration-300 group relative ${activeTab === item.id ? (persona === 'business' ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20' : 'bg-blue-600 text-white shadow-lg shadow-blue-600/20') : 'text-zinc-400 hover:bg-white/5 hover:text-white'}`}
+                                    >
+                                        <div className={`transition-transform duration-300 ${activeTab === item.id ? 'scale-110' : 'group-hover:scale-110'}`}>
+                                            <item.icon />
                                         </div>
-                                        <div className="mt-8 space-y-3">
-                                            {typesData?.gastos.slice(0, 3).map((item, i) => (
-                                                <div key={i} className="flex justify-between items-center p-3 bg-zinc-50 rounded-xl">
-                                                    <span className="text-[10px] font-black text-zinc-400 uppercase">{item.name}</span>
-                                                    <span className="text-sm font-black text-zinc-900">${item.value.toLocaleString()}</span>
+                                        {sidebarOpen && <span className="text-sm font-bold tracking-tight">{item.label}</span>}
+                                        {activeTab === item.id && !sidebarOpen && (
+                                            <div className="absolute left-full ml-4 px-3 py-1 bg-zinc-900 text-white text-xs font-bold rounded-md whitespace-nowrap shadow-xl">
+                                                {item.label}
+                                            </div>
+                                        )}
+                                    </button>
+                                ))}
+                            </div>
+                        ))}
+                    </div>
+
+                    {/* Bottom Profile/Settings */}
+                    <div className="p-4 border-t border-white/5 space-y-2">
+                        <button 
+                            onClick={() => setActiveTab('config')}
+                            className={`w-full flex items-center gap-4 px-4 py-3 rounded-xl transition-all ${activeTab === 'config' ? (persona === 'business' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-blue-500/10 text-blue-500') : 'text-zinc-400 hover:bg-white/5'}`}
+                        >
+                            <Icons.Settings />
+                            {sidebarOpen && <span className="text-sm font-bold">Configuración</span>}
+                        </button>
+                        <button 
+                            onClick={handleLogout}
+                            className="w-full flex items-center gap-4 px-4 py-3 rounded-xl text-zinc-400 hover:bg-red-500/10 hover:text-red-500 transition-all group"
+                        >
+                            <Icons.Logout />
+                            {sidebarOpen && <span className="text-sm font-bold">Cerrar Sesión</span>}
+                        </button>
+                    </div>
+                </aside>
+
+                {/* ── MAIN VIEWPORT ─────────────────────────────────────────────────── */}
+                <div className="flex-1 flex flex-col h-screen overflow-hidden">
+                    {/* ── PREMIUM HEADER ────────────────────────────────────────────────── */}
+                    <header className="bg-white/70 backdrop-blur-md border-b border-zinc-200 h-20 px-8 flex items-center justify-between z-40 sticky top-0">
+                        <div className="flex items-center gap-6">
+                            <button 
+                                onClick={() => setSidebarOpen(!sidebarOpen)}
+                                className="p-2 hover:bg-zinc-100 rounded-lg transition-colors text-zinc-400"
+                            >
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+                            </button>
+                            
+                            {/* Persona Switcher - Premium Toggle */}
+                            <div className="flex items-center gap-1 bg-zinc-100 p-1.5 rounded-2xl shadow-inner border border-zinc-200">
+                                <button 
+                                    onClick={() => { setPersona('business'); setActiveTab('overview'); }}
+                                    className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all duration-500 flex items-center gap-2 ${persona === 'business' ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20 scale-105' : 'text-zinc-500 hover:text-zinc-900'}`}
+                                >
+                                    <Icons.Dashboard />
+                                    Perspectiva de Negocio
+                                </button>
+                                <button 
+                                    onClick={() => { setPersona('fiscal'); setActiveTab('fiscal-summary'); }}
+                                    className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all duration-500 flex items-center gap-2 ${persona === 'fiscal' ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20 scale-105' : 'text-zinc-500 hover:text-zinc-900'}`}
+                                >
+                                    <Icons.Tax />
+                                    Cumplimiento Fiscal
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center gap-6">
+                            <div className="flex items-center gap-2 bg-emerald-50 text-emerald-700 px-4 py-1.5 rounded-full border border-emerald-100">
+                                <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
+                                <span className="text-[10px] font-black uppercase tracking-widest">En Vivo: Mayo 2024</span>
+                            </div>
+                            
+                            <div className="h-8 w-px bg-zinc-200" />
+
+                            <div className="flex items-center gap-4">
+                                <button className="relative p-2 text-zinc-400 hover:text-zinc-900 transition-colors">
+                                    <Icons.Bell />
+                                    <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border-2 border-white" />
+                                </button>
+                                <div className="flex items-center gap-3 pl-2 group cursor-pointer">
+                                    <div className="text-right hidden sm:block">
+                                        <p className="text-sm font-bold text-zinc-900 leading-none">
+                                            {userProfile?.full_name || session?.user?.user_metadata?.full_name || "Usuario Maestro"}
+                                        </p>
+                                        <p className="text-[10px] font-black text-zinc-400 uppercase tracking-tighter mt-1">
+                                            {isAdmin ? "Administrador Global" : userProfile?.role || "Consultando..."}
+                                        </p>
+                                    </div>
+                                    <div className="w-10 h-10 rounded-xl bg-linear-to-br from-emerald-400 to-emerald-600 flex items-center justify-center text-white shadow-lg shadow-emerald-500/20 group-hover:scale-105 transition-transform">
+                                        <Icons.User />
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </header>
+
+                    {/* ── CONTENT AREA ──────────────────────────────────────────────────── */}
+                    <main className="flex-1 overflow-y-auto p-8 lg:p-12 scroll-smooth">
+                        {/* Page Header */}
+                        <div className="mb-12 flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
+                            <div className="space-y-2">
+                                <div className="flex items-center gap-2">
+                                    <span className={`text-[10px] font-black uppercase tracking-[0.3em] ${persona === 'business' ? 'text-emerald-500' : 'text-blue-600'}`}>
+                                        {activeTab === 'overview' ? 'Inteligencia de Negocio' : 
+                                         activeTab === 'sales' ? 'Análisis Comercial' : 
+                                         activeTab === 'expenses' ? 'Control de Operaciones' : 
+                                         activeTab === 'customers' ? 'Análisis de Clientes' : 
+                                         activeTab === 'companies' ? 'Gestión Documental' : 
+                                         activeTab === 'fiscal-summary' ? 'Liquidación de Impuestos' : 
+                                         activeTab === 'annexes' ? 'Libros de IVA Hacienda' : 
+                                         activeTab === 'admin' ? 'Control de Plataforma' : 'Configuración'}
+                                    </span>
+                                </div>
+                                <h1 className="text-4xl font-black text-zinc-900 tracking-tight">
+                                    {activeTab === 'overview' ? 'Resumen Ejecutivo' : 
+                                     activeTab === 'sales' ? 'Rendimiento de Ventas' : 
+                                     activeTab === 'expenses' ? 'Distribución de Gastos' : 
+                                     activeTab === 'customers' ? 'Gestión de Cartera' : 
+                                     activeTab === 'companies' ? 'Portafolio de Empresas' : 
+                                     activeTab === 'fiscal-summary' ? 'Estatus Tributario' : 
+                                     activeTab === 'annexes' ? 'Anexos IVA v11.7' : 
+                                     activeTab === 'admin' ? 'Bóveda de Control' : 'Preferencias'}
+                                </h1>
+                                <p className="text-zinc-500 text-sm font-medium max-w-2xl">
+                                    {activeTab === 'overview' ? 'Visión integral del desempeño financiero y salud tributaria de la empresa.' : 
+                                     activeTab === 'sales' ? 'Seguimiento detallado de ingresos, segmentación de clientes y tendencias comerciales.' : 
+                                     activeTab === 'expenses' ? 'Análisis profundo de la estructura de costos y eficiencia operativa.' : 
+                                     activeTab === 'customers' ? 'Seguimiento de comportamiento, rentabilidad y salud de la base de clientes.' : 
+                                     activeTab === 'companies' ? 'Gestione sus clientes contables, suba y procese archivos CSV y resuelva alertas de validación antes de la declaración fiscal.' : 
+                                     activeTab === 'fiscal-summary' ? 'Cálculo proyectado de débitos y créditos fiscales para el periodo actual.' : 
+                                     activeTab === 'annexes' ? 'Consulta de registros oficiales exportables para la declaración jurada.' : 
+                                     activeTab === 'admin' ? 'Panel exclusivo para la gestión de membresías, cupones y auditoría de la plataforma.' : 'Gestión de parámetros globales y conectividad del sistema.'}
+                                </p>
+                            </div>
+                            
+                            <div className="flex gap-3">
+                                <button className="bg-white border border-zinc-200 text-zinc-900 px-6 py-3 rounded-xl text-xs font-black uppercase tracking-widest flex items-center gap-3 hover:bg-zinc-50 transition-all shadow-sm">
+                                    <Icons.Calendar />
+                                    Mayo 2024
+                                </button>
+                                <button className={`px-6 py-3 rounded-xl text-xs font-black uppercase tracking-widest flex items-center gap-3 transition-all shadow-lg ${persona === 'business' ? 'bg-emerald-500 text-white shadow-emerald-500/20 hover:bg-emerald-600' : 'bg-blue-600 text-white shadow-blue-600/20 hover:bg-blue-700'}`}>
+                                    <Icons.Plus />
+                                    {persona === 'business' ? 'Nuevo Movimiento' : 'Nueva Factura'}
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* View Switching Logic */}
+                        <div className="transition-all duration-700 animate-in fade-in slide-in-from-bottom-6">
+                            
+                            {activeTab === 'overview' && (
+                                <div className="space-y-12">
+                                    {/* Key Indicators Grid */}
+                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+                                        {[
+                                            { label: 'Facturación Mensual', val: trendsData[trendsData.length-1]?.ventas_actual || 0, trend: '+12.5%', color: 'text-zinc-900', bg: 'bg-white' },
+                                            { label: 'Gastos Operativos', val: trendsData[trendsData.length-1]?.gastos_actual || 0, trend: '-3.2%', color: 'text-zinc-900', bg: 'bg-white' },
+                                            { label: 'Margen de Utilidad', val: (trendsData[trendsData.length-1]?.ventas_actual || 0) - (trendsData[trendsData.length-1]?.gastos_actual || 0), trend: '+8.1%', color: 'text-emerald-600', bg: 'bg-emerald-50/50 border-emerald-100' },
+                                            { label: persona === 'business' ? 'Ticket Promedio' : 'Provisión IVA', val: persona === 'business' ? 124.50 : (taxData?.liquidation?.debito_fiscal || 0), trend: persona === 'business' ? '+4.2%' : 'A Tiempo', color: persona === 'business' ? 'text-emerald-600' : 'text-blue-600', bg: persona === 'business' ? 'bg-emerald-50/50 border-emerald-100' : 'bg-blue-50/50 border-blue-100' }
+                                        ].map((stat, i) => (
+                                            <div key={i} className={`${stat.bg} border border-zinc-200/60 rounded-4xl p-8 shadow-sm group hover:shadow-xl hover:shadow-zinc-200/50 transition-all duration-500`}>
+                                                <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-3">{stat.label}</p>
+                                                <div className="flex items-end justify-between">
+                                                    <p className={`text-3xl font-black tabular-nums ${stat.color}`}>${stat.val.toLocaleString()}</p>
+                                                    <span className={`text-[10px] font-black px-2.5 py-1 rounded-full ${stat.trend.startsWith('+') ? 'bg-emerald-100 text-emerald-700' : stat.trend.startsWith('-') ? 'bg-red-100 text-red-700' : 'bg-zinc-100 text-zinc-600'}`}>
+                                                        {stat.trend}
+                                                    </span>
                                                 </div>
-                                            ))}
+                                            </div>
+                                        ))}
+                                    </div>
+
+                                    {/* Main Charts Grid */}
+                                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                                        {/* Financial Trend - Glassmorphism Card */}
+                                        <div className="lg:col-span-8 bg-white/70 backdrop-blur-xl border border-white/40 rounded-[2.5rem] p-10 shadow-2xl shadow-zinc-200/40 relative overflow-hidden group">
+                                            <div className="absolute top-0 right-0 w-80 h-80 bg-emerald-500/5 rounded-full -mr-32 -mt-32 blur-[100px] group-hover:bg-emerald-500/10 transition-colors duration-1000" />
+                                            <div className="relative z-10">
+                                                <div className="flex justify-between items-center mb-10">
+                                                    <h3 className="text-sm font-black text-zinc-900 uppercase tracking-widest flex items-center gap-3">
+                                                        <div className="w-1.5 h-6 bg-emerald-500 rounded-full" />
+                                                        Tendencia Financiera Consolidada
+                                                    </h3>
+                                                    <div className="flex gap-4">
+                                                        <span className="flex items-center gap-2 text-[10px] font-black uppercase text-emerald-600">
+                                                            <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-sm shadow-emerald-500/30" /> Ingresos
+                                                        </span>
+                                                        <span className="flex items-center gap-2 text-[10px] font-black uppercase text-zinc-300">
+                                                            <div className="w-2.5 h-2.5 rounded-full bg-zinc-300" /> Egresos
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                                <div className="h-96 w-full">
+                                                    <FinancialTrendsChart data={trendsData} />
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Sidebar Analytics */}
+                                        <div className="lg:col-span-4 space-y-8">
+                                            <div className="bg-zinc-900 text-white rounded-[2.5rem] p-10 shadow-2xl shadow-zinc-900/20 flex flex-col h-full relative overflow-hidden">
+                                                <div className="absolute bottom-0 right-0 w-32 h-32 bg-emerald-500/20 rounded-full -mb-16 -mr-16 blur-3xl" />
+                                                <h3 className="text-sm font-black uppercase tracking-widest mb-10 text-emerald-400">Estado de Rentabilidad</h3>
+                                                <div className="flex-1 flex items-center justify-center">
+                                                    <ProfitabilityChart data={trendsData} />
+                                                </div>
+                                                <div className="mt-8 pt-8 border-t border-white/5 space-y-4">
+                                                    <div className="flex justify-between items-center">
+                                                        <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Resultado Neto</p>
+                                                        <p className="text-xl font-black text-white">${((trendsData[trendsData.length-1]?.ventas_actual || 0) - (trendsData[trendsData.length-1]?.gastos_actual || 0)).toLocaleString()}</p>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+
+
+                            {activeTab === 'expenses' && (
+                                <div className="space-y-12 animate-in fade-in slide-in-from-bottom-6 duration-700">
+                                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                                        {/* Donut Chart - Categorías de Gasto */}
+                                        <div className="lg:col-span-4 bg-white border border-zinc-200 rounded-[2.5rem] p-10 shadow-xl shadow-zinc-200/40">
+                                            <h3 className="text-sm font-black text-zinc-900 uppercase tracking-widest mb-10 flex items-center gap-3">
+                                                <div className="w-1.5 h-6 bg-indigo-500 rounded-full" />
+                                                Categorías de Gasto
+                                            </h3>
+                                            <div className="h-80">
+                                                <TypesBreakdownChart data={typesData?.gastos || []} type="gastos" />
+                                            </div>
+                                            <div className="mt-8 space-y-3">
+                                                {typesData?.gastos.slice(0, 3).map((item, i) => (
+                                                    <div key={i} className="flex justify-between items-center p-3 bg-zinc-50 rounded-xl">
+                                                        <span className="text-[10px] font-black text-zinc-400 uppercase">{item.name}</span>
+                                                        <span className="text-sm font-black text-zinc-900">${item.value.toLocaleString()}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+
+                                        {/* Treemap - Concentración por Proveedor */}
+                                        <div className="lg:col-span-8 bg-white border border-zinc-200 rounded-[2.5rem] p-10 shadow-xl shadow-zinc-200/40">
+                                            <div className="flex justify-between items-end mb-10">
+                                                <div>
+                                                    <p className="text-[10px] font-black text-indigo-600 uppercase tracking-widest mb-2">Análisis de Proveedores</p>
+                                                    <h3 className="text-2xl font-black text-zinc-900 tracking-tight">Concentración del Gasto</h3>
+                                                </div>
+                                                <div className="text-right">
+                                                    <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest block mb-1">Impacto</span>
+                                                    <span className="text-xs font-bold text-zinc-600 bg-zinc-100 px-3 py-1 rounded-full">Top 5 + Otros</span>
+                                                </div>
+                                            </div>
+                                            
+                                            <SupplierExpenseTreemap 
+                                                data={supplierMockData}
+                                                onSelectSupplier={(s) => {
+                                                    setSelectedSupplier(s);
+                                                    setIsSupplierSlideOverOpen(true);
+                                                }}
+                                            />
+
+                                            <div className="mt-8 flex flex-wrap gap-6">
+                                                <div className="flex items-center gap-2">
+                                                    <div className="w-3 h-3 rounded-full bg-indigo-600" />
+                                                    <span className="text-[10px] font-bold text-zinc-500 uppercase">Socio Estratégico</span>
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    <div className="w-3 h-3 rounded-full bg-amber-600" />
+                                                    <span className="text-[10px] font-bold text-zinc-500 uppercase">Gasto Recurrente</span>
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    <div className="w-3 h-3 rounded-full bg-teal-600" />
+                                                    <span className="text-[10px] font-bold text-zinc-500 uppercase">Eventual</span>
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
 
-                                    {/* Treemap - Concentración por Proveedor */}
-                                    <div className="lg:col-span-8 bg-white border border-zinc-200 rounded-[2.5rem] p-10 shadow-xl shadow-zinc-200/40">
-                                        <div className="flex justify-between items-end mb-10">
-                                            <div>
-                                                <p className="text-[10px] font-black text-indigo-600 uppercase tracking-widest mb-2">Análisis de Proveedores</p>
-                                                <h3 className="text-2xl font-black text-zinc-900 tracking-tight">Concentración del Gasto</h3>
-                                            </div>
-                                            <div className="text-right">
-                                                <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest block mb-1">Impacto</span>
-                                                <span className="text-xs font-bold text-zinc-600 bg-zinc-100 px-3 py-1 rounded-full">Top 5 + Otros</span>
-                                            </div>
+                                    {/* Tabla de Análisis de Proveedores */}
+                                    <div className="space-y-6">
+                                        <div className="flex justify-between items-center">
+                                            <h3 className="text-[11px] font-black text-zinc-900 uppercase tracking-[0.2em]">Listado Detallado de Operaciones</h3>
+                                            <button className="text-[10px] font-black text-indigo-600 uppercase tracking-widest hover:underline">Exportar Reporte Maestro</button>
                                         </div>
-                                        
-                                        <SupplierExpenseTreemap 
+                                        <SupplierAnalysisTable 
                                             data={supplierMockData}
                                             onSelectSupplier={(s) => {
                                                 setSelectedSupplier(s);
                                                 setIsSupplierSlideOverOpen(true);
                                             }}
                                         />
+                                    </div>
 
-                                        <div className="mt-8 flex flex-wrap gap-6">
+                                    <SupplierDetailSlideOver 
+                                        supplier={selectedSupplier}
+                                        isOpen={isSupplierSlideOverOpen}
+                                        onClose={() => setIsSupplierSlideOverOpen(false)}
+                                    />
+                                </div>
+                            )}
+
+                            {/* FISCAL VIEWS */}
+                            {activeTab === 'companies' && (isAdmin || userProfile?.role === 'contador') && (
+                                <div className="animate-in fade-in duration-700 space-y-6">
+                                    <button 
+                                        onClick={() => setActiveTab('config')}
+                                        className="bg-white border border-zinc-200 text-zinc-600 px-6 py-3 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-zinc-50 transition-all shadow-sm flex items-center gap-2"
+                                    >
+                                        ← Volver a Configuración
+                                    </button>
+                                    {!selectedCompanyForUpload ? (
+                                        <div className="bg-white border border-zinc-200 rounded-[2.5rem] p-10 shadow-2xl shadow-zinc-200/50">
+                                            <CompanyManager 
+                                                companies={companiesList}
+                                                onSelectCompany={(company) => setSelectedCompanyForUpload(company)}
+                                                onAddCompany={handleAddCompany}
+                                            />
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-6">
+                                            {!validationResult && (
+                                                <div className="flex items-center gap-4">
+                                                    <button 
+                                                        onClick={() => setSelectedCompanyForUpload(null)}
+                                                        className="bg-white border border-zinc-200 text-zinc-600 px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-zinc-50 transition-colors shadow-sm"
+                                                    >
+                                                        ← Volver al Gestor
+                                                    </button>
+                                                    <div className="flex flex-col">
+                                                        <span className="text-xl font-black tracking-tight text-zinc-900">{selectedCompanyForUpload.razonSocial}</span>
+                                                        <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">NIT: {selectedCompanyForUpload.nit}</span>
+                                                    </div>
+                                                </div>
+                                            )}
+                                            <div className={`bg-white border border-zinc-200 rounded-[2.5rem] shadow-2xl shadow-zinc-200/50 overflow-hidden ${validationResult ? 'border-none shadow-none bg-transparent' : ''}`}>
+                                                {validationResult ? (
+                                                    <ValidationAlerts 
+                                                        result={validationResult}
+                                                        onDismiss={() => {
+                                                            setValidationResult(null);
+                                                            setSelectedCompanyForUpload(null);
+                                                        }}
+                                                        onRetry={() => {
+                                                            setValidationResult(null);
+                                                        }}
+                                                    />
+                                                ) : (
+                                                    <SmartCsvUploader 
+                                                        company={selectedCompanyForUpload}
+                                                        onValidationComplete={(result) => setValidationResult(result)}
+                                                        onBack={() => setSelectedCompanyForUpload(null)}
+                                                    />
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {activeTab === 'fiscal-summary' && (
+                                <div className="space-y-10 animate-in fade-in duration-700">
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                                        {[
+                                            { label: 'Débito Fiscal (IVA)', val: taxData?.liquidation?.debito_fiscal, color: 'text-zinc-900', icon: Icons.Tax },
+                                            { label: 'Crédito Fiscal (IVA)', val: taxData?.liquidation?.credito_fiscal, color: 'text-blue-600', icon: Icons.Tax },
+                                            { label: 'Saldo Neto IVA', val: taxData?.liquidation?.neto, color: 'text-indigo-600', bg: 'bg-indigo-50/30 border-indigo-100', icon: Icons.Tax }
+                                        ].map((stat, i) => {
+                                            const Icon = stat.icon;
+                                            return (
+                                            <div key={i} className={`bg-white border border-zinc-200/60 rounded-3xl p-8 flex items-center justify-between shadow-sm group hover:-translate-y-1 transition-all duration-500 ${stat.bg || ''}`}>
+                                                <div>
+                                                    <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-2">{stat.label}</p>
+                                                    <p className={`text-3xl font-black tabular-nums ${stat.color}`}>${stat.val?.toLocaleString()}</p>
+                                                </div>
+                                                <div className={`w-12 h-12 bg-zinc-100 rounded-2xl flex items-center justify-center text-zinc-400 group-hover:text-white transition-all duration-500 ${persona === 'fiscal' ? 'group-hover:bg-blue-600' : 'group-hover:bg-zinc-900'}`}>
+                                                    {Icon && <Icon />}
+                                                </div>
+                                            </div>
+                                        )})}
+                                    </div>
+                                    <div className="bg-white border border-zinc-200 rounded-[2.5rem] shadow-xl shadow-zinc-200/40 overflow-hidden">
+                                        <TaxLiquidationCard data={taxData?.liquidation} />
+                                    </div>
+                                </div>
+                            )}
+
+                            {activeTab === 'annexes' && (
+                                <div className="bg-white border border-zinc-200 rounded-[2.5rem] p-10 shadow-2xl shadow-zinc-200/50 overflow-hidden animate-in fade-in duration-700">
+                                    <LegalAnnexesTab />
+                                </div>
+                            )}
+
+
+
+
+                            {activeTab === 'customers' && (
+                                <div className="animate-in fade-in slide-in-from-bottom-6 duration-700">
+                                    {/* Treemap de Concentración de Ingresos */}
+                                    <div className="bg-white border border-zinc-200 rounded-4xl p-10 shadow-sm mb-8">
+                                        <div className="flex justify-between items-end mb-8">
+                                            <div>
+                                                <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-2">Análisis de Concentración</p>
+                                                <h3 className="text-2xl font-black text-zinc-900 tracking-tight flex items-center gap-3">
+                                                    Ingresos por Cliente
+                                                </h3>
+                                            </div>
+                                            <div className="text-right">
+                                                <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest block mb-1">Visualización</span>
+                                                <span className="text-xs font-bold text-zinc-600 bg-zinc-100 px-3 py-1 rounded-full">Top 5 Clientes + Otros</span>
+                                            </div>
+                                        </div>
+
+                                        <CustomerRevenueTreemap 
+                                            data={customerMockData}
+                                            topCount={5}
+                                            onSelectCustomer={(c) => {
+                                                setSelectedCustomer(c);
+                                                setIsSlideOverOpen(true);
+                                            }}
+                                        />
+                                        
+                                        <div className="mt-6 flex items-center gap-6">
                                             <div className="flex items-center gap-2">
-                                                <div className="w-3 h-3 rounded-full bg-indigo-600" />
-                                                <span className="text-[10px] font-bold text-zinc-500 uppercase">Socio Estratégico</span>
+                                                <div className="w-3 h-3 rounded-full bg-emerald-600" />
+                                                <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Campeones</span>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <div className="w-3 h-3 rounded-full bg-blue-600" />
+                                                <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Leales</span>
                                             </div>
                                             <div className="flex items-center gap-2">
                                                 <div className="w-3 h-3 rounded-full bg-amber-600" />
-                                                <span className="text-[10px] font-bold text-zinc-500 uppercase">Gasto Recurrente</span>
+                                                <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">En Riesgo</span>
                                             </div>
                                             <div className="flex items-center gap-2">
-                                                <div className="w-3 h-3 rounded-full bg-teal-600" />
-                                                <span className="text-[10px] font-bold text-zinc-500 uppercase">Eventual</span>
+                                                <div className="w-3 h-3 rounded-full bg-zinc-400" />
+                                                <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Otros</span>
                                             </div>
                                         </div>
                                     </div>
-                                </div>
 
-                                {/* Tabla de Análisis de Proveedores */}
-                                <div className="space-y-6">
-                                    <div className="flex justify-between items-center">
-                                        <h3 className="text-[11px] font-black text-zinc-900 uppercase tracking-[0.2em]">Listado Detallado de Operaciones</h3>
-                                        <button className="text-[10px] font-black text-indigo-600 uppercase tracking-widest hover:underline">Exportar Reporte Maestro</button>
-                                    </div>
-                                    <SupplierAnalysisTable 
-                                        data={supplierMockData}
-                                        onSelectSupplier={(s) => {
-                                            setSelectedSupplier(s);
-                                            setIsSupplierSlideOverOpen(true);
-                                        }}
-                                    />
-                                </div>
-
-                                <SupplierDetailSlideOver 
-                                    supplier={selectedSupplier}
-                                    isOpen={isSupplierSlideOverOpen}
-                                    onClose={() => setIsSupplierSlideOverOpen(false)}
-                                />
-                            </div>
-                        )}
-
-                        {/* FISCAL VIEWS */}
-                        {activeTab === 'companies' && (
-                            <div className="animate-in fade-in duration-700">
-                                {!selectedCompanyForUpload ? (
-                                    <div className="bg-white border border-zinc-200 rounded-[2.5rem] p-10 shadow-2xl shadow-zinc-200/50">
-                                        <CompanyManager 
-                                            companies={companiesList}
-                                            onSelectCompany={(company) => setSelectedCompanyForUpload(company)}
-                                            onAddCompany={handleAddCompany}
-                                        />
-                                    </div>
-                                ) : (
-                                    <div className="space-y-6">
-                                        {!validationResult && (
-                                            <div className="flex items-center gap-4">
-                                                <button 
-                                                    onClick={() => setSelectedCompanyForUpload(null)}
-                                                    className="bg-white border border-zinc-200 text-zinc-600 px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-zinc-50 transition-colors shadow-sm"
-                                                >
-                                                    ← Volver al Gestor
-                                                </button>
-                                                <div className="flex flex-col">
-                                                    <span className="text-xl font-black tracking-tight text-zinc-900">{selectedCompanyForUpload.razonSocial}</span>
-                                                    <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">NIT: {selectedCompanyForUpload.nit}</span>
-                                                </div>
-                                            </div>
-                                        )}
-                                        <div className={`bg-white border border-zinc-200 rounded-[2.5rem] shadow-2xl shadow-zinc-200/50 overflow-hidden ${validationResult ? 'border-none shadow-none bg-transparent' : ''}`}>
-                                            {validationResult ? (
-                                                <ValidationAlerts 
-                                                    result={validationResult}
-                                                    onDismiss={() => {
-                                                        // En una app real, aquí se enviarían los datos a procesar en el backend.
-                                                        setValidationResult(null);
-                                                        setSelectedCompanyForUpload(null);
-                                                    }}
-                                                    onRetry={() => {
-                                                        setValidationResult(null);
-                                                    }}
-                                                />
-                                            ) : (
-                                                <SmartCsvUploader 
-                                                    company={selectedCompanyForUpload}
-                                                    onValidationComplete={(result) => setValidationResult(result)}
-                                                    onBack={() => setSelectedCompanyForUpload(null)}
-                                                />
-                                            )}
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-                        )}
-
-                        {activeTab === 'fiscal-summary' && (
-                            <div className="space-y-10 animate-in fade-in duration-700">
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                                    {[
-                                        { label: 'Débito Fiscal (IVA)', val: taxData?.liquidation?.debito_fiscal, color: 'text-zinc-900', icon: Icons.Tax },
-                                        { label: 'Crédito Fiscal (IVA)', val: taxData?.liquidation?.credito_fiscal, color: 'text-blue-600', icon: Icons.Tax },
-                                        { label: 'Saldo Neto IVA', val: taxData?.liquidation?.neto, color: 'text-indigo-600', bg: 'bg-indigo-50/30 border-indigo-100', icon: Icons.Tax }
-                                    ].map((stat, i) => {
-                                        const Icon = stat.icon;
-                                        return (
-                                        <div key={i} className={`bg-white border border-zinc-200/60 rounded-3xl p-8 flex items-center justify-between shadow-sm group hover:-translate-y-1 transition-all duration-500 ${stat.bg || ''}`}>
-                                            <div>
-                                                <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-2">{stat.label}</p>
-                                                <p className={`text-3xl font-black tabular-nums ${stat.color}`}>${stat.val?.toLocaleString()}</p>
-                                            </div>
-                                            <div className={`w-12 h-12 bg-zinc-100 rounded-2xl flex items-center justify-center text-zinc-400 group-hover:text-white transition-all duration-500 ${persona === 'fiscal' ? 'group-hover:bg-blue-600' : 'group-hover:bg-zinc-900'}`}>
-                                                {Icon && <Icon />}
-                                            </div>
-                                        </div>
-                                    )})}
-                                </div>
-                                <div className="bg-white border border-zinc-200 rounded-[2.5rem] shadow-xl shadow-zinc-200/40 overflow-hidden">
-                                    <TaxLiquidationCard data={taxData?.liquidation} />
-                                </div>
-                            </div>
-                        )}
-
-                        {activeTab === 'annexes' && (
-                            <div className="bg-white border border-zinc-200 rounded-[2.5rem] p-10 shadow-2xl shadow-zinc-200/50 overflow-hidden animate-in fade-in duration-700">
-                                <LegalAnnexesTab />
-                            </div>
-                        )}
-
-
-
-
-                        {activeTab === 'customers' && (
-                            <div className="animate-in fade-in slide-in-from-bottom-6 duration-700">
-                                {/* Treemap de Concentración de Ingresos */}
-                                <div className="bg-white border border-zinc-200 rounded-4xl p-10 shadow-sm mb-8">
-                                    <div className="flex justify-between items-end mb-8">
-                                        <div>
-                                            <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-2">Análisis de Concentración</p>
-                                            <h3 className="text-2xl font-black text-zinc-900 tracking-tight flex items-center gap-3">
-                                                Ingresos por Cliente
-                                            </h3>
-                                        </div>
-                                        <div className="text-right">
-                                            <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest block mb-1">Visualización</span>
-                                            <span className="text-xs font-bold text-zinc-600 bg-zinc-100 px-3 py-1 rounded-full">Top 5 Clientes + Otros</span>
-                                        </div>
-                                    </div>
-
-                                    <CustomerRevenueTreemap 
-                                        data={customerMockData}
-                                        topCount={5}
+                                    <CustomerAnalysisTable 
+                                        data={customerMockData} 
                                         onSelectCustomer={(c) => {
                                             setSelectedCustomer(c);
                                             setIsSlideOverOpen(true);
                                         }}
                                     />
-                                    
-                                    <div className="mt-6 flex items-center gap-6">
-                                        <div className="flex items-center gap-2">
-                                            <div className="w-3 h-3 rounded-full bg-emerald-600" />
-                                            <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Campeones</span>
+                                    <CustomerDetailSlideOver 
+                                        customer={selectedCustomer}
+                                        isOpen={isSlideOverOpen}
+                                        onClose={() => setIsSlideOverOpen(false)}
+                                    />
+                                </div>
+                            )}
+
+                            {activeTab === 'invitations' && isAdmin && (
+                                <div className="animate-in fade-in slide-in-from-bottom-6 duration-700 space-y-6">
+                                    <button 
+                                        onClick={() => setActiveTab('config')}
+                                        className="bg-white border border-zinc-200 text-zinc-600 px-6 py-3 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-zinc-50 transition-all shadow-sm flex items-center gap-2"
+                                    >
+                                        ← Volver a Configuración
+                                    </button>
+                                    <UserInvitationForm token={authToken} />
+                                </div>
+                            )}
+
+                            {activeTab === 'admin' && isAdmin && (
+                                <div className="animate-in fade-in slide-in-from-bottom-6 duration-700 space-y-6">
+                                    <button 
+                                        onClick={() => setActiveTab('config')}
+                                        className="bg-white border border-zinc-200 text-zinc-600 px-6 py-3 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-zinc-50 transition-all shadow-sm flex items-center gap-2"
+                                    >
+                                        ← Volver a Configuración
+                                    </button>
+                                    <AdminPanel />
+                                </div>
+                            )}
+
+                            {activeTab === 'config' && (
+                                <div className="bg-white border border-zinc-200 rounded-[2.5rem] p-12 shadow-xl shadow-zinc-200/40 animate-in fade-in duration-700">
+                                    <h3 className="text-xl font-black text-zinc-900 mb-10 uppercase tracking-widest flex items-center gap-4">
+                                        <Icons.Settings />
+                                        Configuración del Sistema
+                                    </h3>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+                                        <div className="p-8 bg-zinc-50 border border-zinc-200 rounded-3xl group hover:border-emerald-500/50 transition-colors">
+                                            <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center shadow-sm mb-6 group-hover:bg-emerald-500 group-hover:text-white transition-all">
+                                                <Icons.Tax />
+                                            </div>
+                                            <p className="text-[11px] font-black text-zinc-900 uppercase tracking-widest mb-3">Parámetros Tributarios</p>
+                                            <p className="text-sm text-zinc-500 font-medium">Configure tasas de IVA, periodos fiscales y umbrales de retención para su región.</p>
                                         </div>
-                                        <div className="flex items-center gap-2">
-                                            <div className="w-3 h-3 rounded-full bg-blue-600" />
-                                            <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Leales</span>
+                                        <div className="p-8 bg-zinc-50 border border-zinc-200 rounded-3xl group hover:border-emerald-500/50 transition-colors">
+                                            <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center shadow-sm mb-6 group-hover:bg-emerald-500 group-hover:text-white transition-all">
+                                                <Icons.AI />
+                                            </div>
+                                            <p className="text-[11px] font-black text-zinc-900 uppercase tracking-widest mb-3">Entrenamiento de IA</p>
+                                            <p className="text-sm text-zinc-500 font-medium">Ajuste la sensibilidad de detección de anomalías y sincronice nuevos datasets para el modelo.</p>
                                         </div>
-                                        <div className="flex items-center gap-2">
-                                            <div className="w-3 h-3 rounded-full bg-amber-600" />
-                                            <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">En Riesgo</span>
-                                        </div>
-                                        <div className="flex items-center gap-2">
-                                            <div className="w-3 h-3 rounded-full bg-zinc-400" />
-                                            <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Otros</span>
-                                        </div>
+
+                                        {(isAdmin || userProfile?.role === 'contador') && (
+                                            <button 
+                                                onClick={() => setActiveTab('companies')}
+                                                className="p-8 bg-zinc-50 border border-zinc-200 rounded-3xl group hover:border-blue-500/50 transition-colors text-left"
+                                            >
+                                                <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center shadow-sm mb-6 group-hover:bg-blue-600 group-hover:text-white transition-all">
+                                                    <Icons.Building />
+                                                </div>
+                                                <p className="text-[11px] font-black text-zinc-900 uppercase tracking-widest mb-3">Gestor de Empresas</p>
+                                                <p className="text-sm text-zinc-500 font-medium">Administre el catálogo de empresas y gestione la carga masiva de documentos tributarios.</p>
+                                            </button>
+                                        )}
+
+                                        {isAdmin && (
+                                            <>
+                                                <button 
+                                                    onClick={() => setActiveTab('admin')}
+                                                    className="p-8 bg-zinc-50 border border-zinc-200 rounded-3xl group hover:border-blue-500/50 transition-colors text-left"
+                                                >
+                                                    <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center shadow-sm mb-6 group-hover:bg-blue-600 group-hover:text-white transition-all">
+                                                        <Icons.Settings />
+                                                    </div>
+                                                    <p className="text-[11px] font-black text-zinc-900 uppercase tracking-widest mb-3">Bóveda Administrativa</p>
+                                                    <p className="text-sm text-zinc-500 font-medium">Gestión de membresías, cupones y auditoría global de la plataforma.</p>
+                                                </button>
+                                                <button 
+                                                    onClick={() => setActiveTab('invitations')}
+                                                    className="p-8 bg-zinc-50 border border-zinc-200 rounded-3xl group hover:border-blue-500/50 transition-colors text-left"
+                                                >
+                                                    <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center shadow-sm mb-6 group-hover:bg-blue-600 group-hover:text-white transition-all">
+                                                        <Icons.User />
+                                                    </div>
+                                                    <p className="text-[11px] font-black text-zinc-900 uppercase tracking-widest mb-3">Gestión de Invitaciones</p>
+                                                    <p className="text-sm text-zinc-500 font-medium">Envíe invitaciones a nuevos usuarios y gestione roles administrativos.</p>
+                                                </button>
+                                            </>
+                                        )}
                                     </div>
                                 </div>
+                            )}
+                        </div>
+                    </main>
+                </div>
 
-                                <CustomerAnalysisTable 
-                                    data={customerMockData} 
-                                    onSelectCustomer={(c) => {
-                                        setSelectedCustomer(c);
-                                        setIsSlideOverOpen(true);
-                                    }}
-                                />
-                                <CustomerDetailSlideOver 
-                                    customer={selectedCustomer}
-                                    isOpen={isSlideOverOpen}
-                                    onClose={() => setIsSlideOverOpen(false)}
-                                />
-                            </div>
-                        )}
+                {/* Decorative Ambient Effects */}
+                <div className="fixed inset-0 pointer-events-none z-[-1] overflow-hidden transition-all duration-1000">
+                    <div className={`absolute top-0 right-0 w-240 h-240 rounded-full blur-[150px] -mr-80 -mt-80 transition-all duration-1000 ${persona === 'business' ? 'bg-emerald-500/10' : 'bg-blue-600/10'}`} />
+                    <div className={`absolute bottom-0 left-0 w-200 h-200 rounded-full blur-[120px] -ml-60 -mb-60 transition-all duration-1000 ${persona === 'business' ? 'bg-zinc-200/20' : 'bg-indigo-500/10'}`} />
+                    <div className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-7xl h-320 rounded-full blur-[180px] opacity-20 transition-all duration-1000 ${persona === 'business' ? 'bg-emerald-100/0' : 'bg-blue-400/5'}`} />
+                </div>
 
-                        {activeTab === 'config' && (
-                            <div className="bg-white border border-zinc-200 rounded-[2.5rem] p-12 shadow-xl shadow-zinc-200/40 animate-in fade-in duration-700">
-                                <h3 className="text-xl font-black text-zinc-900 mb-10 uppercase tracking-widest flex items-center gap-4">
-                                    <Icons.Settings />
-                                    Configuración del Sistema
-                                </h3>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
-                                    <div className="p-8 bg-zinc-50 border border-zinc-200 rounded-3xl group hover:border-emerald-500/50 transition-colors">
-                                        <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center shadow-sm mb-6 group-hover:bg-emerald-500 group-hover:text-white transition-all">
-                                            <Icons.Tax />
-                                        </div>
-                                        <p className="text-[11px] font-black text-zinc-900 uppercase tracking-widest mb-3">Parámetros Tributarios</p>
-                                        <p className="text-sm text-zinc-500 font-medium">Configure tasas de IVA, periodos fiscales y umbrales de retención para su región.</p>
-                                    </div>
-                                    <div className="p-8 bg-zinc-50 border border-zinc-200 rounded-3xl group hover:border-emerald-500/50 transition-colors">
-                                        <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center shadow-sm mb-6 group-hover:bg-emerald-500 group-hover:text-white transition-all">
-                                            <Icons.AI />
-                                        </div>
-                                        <p className="text-[11px] font-black text-zinc-900 uppercase tracking-widest mb-3">Entrenamiento de IA</p>
-                                        <p className="text-sm text-zinc-500 font-medium">Ajuste la sensibilidad de detección de anomalías y sincronice nuevos datasets para el modelo.</p>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                </main>
+                {/* ── AI CHAT WIDGET ────────────────────────────────────────────────── */}
+                <AiChatWidget 
+                    token={authToken} 
+                    apiUrl={process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1"} 
+                />
             </div>
-
-            {/* Decorative Ambient Effects */}
-            <div className="fixed inset-0 pointer-events-none z-[-1] overflow-hidden transition-all duration-1000">
-                <div className={`absolute top-0 right-0 w-240 h-240 rounded-full blur-[150px] -mr-80 -mt-80 transition-all duration-1000 ${persona === 'business' ? 'bg-emerald-500/10' : 'bg-blue-600/10'}`} />
-                <div className={`absolute bottom-0 left-0 w-200 h-200 rounded-full blur-[120px] -ml-60 -mb-60 transition-all duration-1000 ${persona === 'business' ? 'bg-zinc-200/20' : 'bg-indigo-500/10'}`} />
-                <div className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-7xl h-320 rounded-full blur-[180px] opacity-20 transition-all duration-1000 ${persona === 'business' ? 'bg-emerald-100/0' : 'bg-blue-400/5'}`} />
-            </div>
-
-            {/* ── AI CHAT WIDGET ────────────────────────────────────────────────── */}
-            <AiChatWidget 
-                token={authToken} 
-                apiUrl={process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1"} 
-            />
-        </div>
+        </AuthGuard>
     );
 }

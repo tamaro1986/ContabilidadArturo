@@ -24,3 +24,8 @@ class UserResponse(BaseModel):
     email: str
     role: Optional[str] = None
     tenant_id: Optional[str] = None
+
+class UserInvite(BaseModel):
+    email: EmailStr
+    full_name: str
+    role: str = "cliente"

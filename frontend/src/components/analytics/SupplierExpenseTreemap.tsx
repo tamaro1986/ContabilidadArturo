@@ -14,6 +14,15 @@ interface SupplierExpenseTreemapProps {
  * Visualiza la concentración de gastos operativos mediante bloques proporcionales.
  * Utiliza un layout de Flexbox puro para máxima compatibilidad y rendimiento.
  */
+interface TreemapNode {
+    id: string | number;
+    nombre: string;
+    valor: number;
+    pct: number;
+    categoria: string;
+    raw: SupplierRecord | null;
+}
+
 const SupplierExpenseTreemap: React.FC<SupplierExpenseTreemapProps> = ({ 
     data, 
     topCount = 5,
@@ -29,7 +38,7 @@ const SupplierExpenseTreemap: React.FC<SupplierExpenseTreemapProps> = ({
     const totalExpense = sortedData.reduce((acc, curr) => acc + curr.gastoHistorico, 0);
 
     // 3. Crear nodos para el treemap
-    const nodes = topSuppliers.map(s => ({
+    const nodes: TreemapNode[] = topSuppliers.map(s => ({
         id: s.id,
         nombre: s.nombre,
         valor: s.gastoHistorico,
@@ -45,7 +54,7 @@ const SupplierExpenseTreemap: React.FC<SupplierExpenseTreemapProps> = ({
             valor: othersExpense,
             pct: (othersExpense / totalExpense) * 100,
             categoria: 'zinc', // Bloque consolidado "Otros"
-            raw: null as any
+            raw: null
         });
     }
 
