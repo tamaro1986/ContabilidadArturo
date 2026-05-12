@@ -11,3 +11,7 @@ python-magic-bin; sys_platform == 'win32'
 celery
 redis
 gunicorn
+langchain
+langchain-openai
+langchain-community
+langchain-core
