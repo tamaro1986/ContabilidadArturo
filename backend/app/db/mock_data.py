@@ -129,13 +129,9 @@ def init_mock_duckdb(duck_con) -> None:
     _insert_random(duck_con, ["tenant_B", "tenant_C"])
 
     # ── Detección de anomalías automática (pre-calentado) ─────────────────────
-    try:
-        from app.services.anomaly_engine import run_anomaly_detection
-        for tenant in ["tenant_A", "tenant_B", "tenant_C"]:
-            summary = run_anomaly_detection(duck_con, tenant)
-            print(f"[ANOMALY] {tenant}: {summary['total_anomalous']} anomalías ({summary['anomaly_rate_pct']}%)")
-    except Exception as exc:
-        print(f"[ANOMALY] Error en detección automática: {exc}")
+    # Se ha eliminado el pre-calentado síncrono para evitar Timeouts (Status 3) 
+    # y OOM en el arranque del contenedor (Render Free Tier).
+    # El motor se ejecutará de forma "lazy" en la primera petición al endpoint.
 
     print("--- MOCK MODE: DuckDB listo ---")
 

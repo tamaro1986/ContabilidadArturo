@@ -12,7 +12,18 @@ class Settings(BaseSettings):
     MOCK_MODE: bool = True
     
     # Security
-    CORS_ORIGINS: list[str] = os.getenv("CORS_ORIGINS", "*").split(",")
+    CORS_ORIGINS: list[str] = [
+        "https://contabilidad-arturo.vercel.app",
+        "https://contabilidad-arturo-git-main-tamaro1986s-projects.vercel.app",
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "http://localhost:8000"
+    ]
+    if os.getenv("CORS_ORIGINS"):
+        CORS_ORIGINS = os.getenv("CORS_ORIGINS", "").split(",")
+
+    # Regex para permitir cualquier subdominio de Vercel (útil para PR previews)
+    CORS_ORIGIN_REGEX: str = r"https://contabilidad-arturo.*\.vercel\.app"
 
     # AI / RAG Configuration
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")

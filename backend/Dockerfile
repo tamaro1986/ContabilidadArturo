@@ -26,5 +26,5 @@ COPY . .
 # Exponer el puerto configurado para Render (puerto por defecto 10000)
 EXPOSE 10000
 
-# Comando para iniciar el servidor con Gunicorn (recomendado para producción)
-CMD ["gunicorn", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "app.main:app", "--bind", "0.0.0.0:10000"]
+# Comando para iniciar el servidor con Gunicorn (recomendado para producción, ajustado para Free Tier)
+CMD ["gunicorn", "-w", "1", "-k", "uvicorn.workers.UvicornWorker", "--timeout", "120", "app.main:app", "--bind", "0.0.0.0:10000"]

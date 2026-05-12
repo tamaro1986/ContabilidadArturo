@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { supabase } from "@/utils/supabase";
+import { supabase } from "@/lib/supabaseClient";
 import { AnnexRecord, AnnexType } from "@/types/analytics";
 
 // ── Inline SVG Icons ───────────────────────────────────────────────────────────

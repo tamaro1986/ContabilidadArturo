@@ -13,9 +13,12 @@ app = FastAPI(
 )
 
 # ── CORS Configuration ────────────────────────────────────────────────────────
+# IMPORTANTE: Si allow_credentials=True, allow_origins NO puede ser ["*"]
+# Usamos la lista de orígenes definida en settings.py
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
+    allow_origin_regex=settings.CORS_ORIGIN_REGEX,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
