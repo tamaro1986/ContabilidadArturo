@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from app.api.dependencies.roles import require_cliente, require_contador
 from app.services.duckdb_client import get_duckdb_client
+from app.services.cache import cache_response
 
 router = APIRouter()
 
@@ -37,6 +38,7 @@ SEGMENT_MAPPING = {
 }
 
 @router.get("/rfm")
+@cache_response(expire=3600)
 def get_rfm_analysis(
     user_data: dict = Depends(require_cliente),
     duck_con = Depends(get_duckdb_client)
@@ -120,6 +122,7 @@ def get_rfm_analysis(
         raise HTTPException(status_code=500, detail=f"Error en análisis DuckDB: {str(e)}")
 
 @router.get("/monthly-customers")
+@cache_response(expire=600)  # 10 min for mes actual
 def get_monthly_customers(
     user_data: dict = Depends(require_cliente),
     duck_con = Depends(get_duckdb_client)
@@ -214,6 +217,7 @@ def get_monthly_customers(
         raise HTTPException(status_code=500, detail=f"Error en clientes mensuales: {str(e)}")
 
 @router.get("/tax-summary/iva-liquidation")
+@cache_response(expire=1800)
 def get_iva_liquidation(
     user_data: dict = Depends(require_cliente),
     duck_con = Depends(get_duckdb_client)
@@ -267,6 +271,7 @@ def get_iva_liquidation(
         raise HTTPException(status_code=500, detail=f"Error en análisis DuckDB: {str(e)}")
 
 @router.get("/tax-summary/top-entities")
+@cache_response(expire=1800)
 def get_top_entities(
     user_data: dict = Depends(require_cliente),
     duck_con = Depends(get_duckdb_client)
@@ -329,6 +334,7 @@ def get_top_entities(
         raise HTTPException(status_code=500, detail=f"Error en análisis DuckDB: {str(e)}")
 
 @router.get("/tax-summary/document-health")
+@cache_response(expire=1800)
 def get_document_health(
     user_data: dict = Depends(require_cliente),
     duck_con = Depends(get_duckdb_client)
@@ -376,6 +382,7 @@ def get_document_health(
         raise HTTPException(status_code=500, detail=f"Error en análisis DuckDB: {str(e)}")
 
 @router.get("/financial-trends")
+@cache_response(expire=3600)
 def get_financial_trends(
     user_data: dict = Depends(require_cliente),
     duck_con = Depends(get_duckdb_client)
@@ -438,6 +445,7 @@ def get_financial_trends(
         raise HTTPException(status_code=500, detail=f"Error en análisis DuckDB: {str(e)}")
 
 @router.get("/types-breakdown")
+@cache_response(expire=3600)
 def get_types_breakdown(
     user_data: dict = Depends(require_cliente),
     duck_con = Depends(get_duckdb_client)
@@ -496,6 +504,7 @@ def get_types_breakdown(
 
 
 @router.get("/payroll-summary")
+@cache_response(expire=3600)
 def get_payroll_summary(
     user_data: dict = Depends(require_cliente),
     duck_con = Depends(get_duckdb_client)
@@ -546,6 +555,7 @@ def get_payroll_summary(
         raise HTTPException(status_code=500, detail=f"Error en análisis de nómina: {str(e)}")
 
 @router.get("/tax-summary/annexes/ventas")
+@cache_response(expire=600)
 def get_ventas_annex(
     user_data: dict = Depends(require_cliente),
     duck_con = Depends(get_duckdb_client)
@@ -591,6 +601,7 @@ def get_ventas_annex(
         raise HTTPException(status_code=500, detail=f"Error en anexo de ventas: {str(e)}")
 
 @router.get("/tax-summary/annexes/compras")
+@cache_response(expire=600)
 def get_compras_annex(
     user_data: dict = Depends(require_cliente),
     duck_con = Depends(get_duckdb_client)
@@ -634,6 +645,7 @@ def get_compras_annex(
         raise HTTPException(status_code=500, detail=f"Error en anexo de compras: {str(e)}")
 
 @router.get("/tax-summary/annexes/payroll")
+@cache_response(expire=600)
 def get_payroll_annex(
     user_data: dict = Depends(require_cliente),
     duck_con = Depends(get_duckdb_client)

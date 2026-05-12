@@ -1,7 +1,11 @@
-from fastapi import FastAPI
+import uuid
+import shutil
+from pathlib import Path
+from fastapi import FastAPI, UploadFile, File, BackgroundTasks, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.api.routes import auth, financial_data, analytics, ai as ai_router
+from app.services.processor import process_csv_task
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -11,11 +15,15 @@ app = FastAPI(
 # ── CORS Configuration ────────────────────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Directorio temporal para procesamiento seguro
+UPLOAD_DIR = Path("temp_uploads")
+UPLOAD_DIR.mkdir(exist_ok=True)
 
 @app.on_event("startup")
 def startup_event():
@@ -32,19 +40,69 @@ def startup_event():
 
 @app.get("/")
 def read_root():
-    return {"message": "Contabilidad Arturo API is running", "status": "online"}
+    return {"message": f"{settings.PROJECT_NAME} is running", "status": "online"}
 
 @app.get("/health")
 def health_check():
     return {"status": "ok", "mode": "mock" if settings.MOCK_MODE else "production"}
 
+@app.post(f"{settings.API_V1_STR}/process-csv", status_code=status.HTTP_202_ACCEPTED, tags=["analytics"])
+async def upload_and_process_csv(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    tenant_id: str = "default"
+):
+    """
+    Sube un archivo CSV para procesamiento analítico diferido.
+    """
+    # ── OWASP Security Validations ───────────────────────────────────────────
+    # 1. Validar el tipo de contenido
+    if file.content_type != "text/csv":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Archivo inválido. Solo se permiten archivos CSV (text/csv)."
+        )
+
+    # 2. Validar tamaño máximo (Ej: 10MB) para prevenir DoS
+    MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
+    contents = await file.read()
+    if len(contents) > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="El archivo es demasiado grande. El límite es 10MB."
+        )
+    await file.seek(0) # Resetear puntero después de leer
+
+    # 3. Sanitizar tenant_id para prevenir inyecciones
+    safe_tenant_id = "".join(c for c in tenant_id if c.isalnum() or c in "-_")
+
+    unique_filename = f"{uuid.uuid4()}.csv"
+    file_path = UPLOAD_DIR / unique_filename
+
+    try:
+        with file_path.open("wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al guardar el archivo: {str(e)}"
+        )
+    finally:
+        file.file.close()
+
+    background_tasks.add_task(process_csv_task, str(file_path), safe_tenant_id)
+
+    return {
+        "status": "accepted",
+        "message": "Archivo recibido y validado (OWASP Check Pass).",
+        "file_id": unique_filename,
+        "tenant_id": safe_tenant_id
+    }
+
 # ── Router Mounting ──────────────────────────────────────────────────────────
-# Prefijo oficial: /api/v1
-# El frontend debe estar configurado para usar este prefijo en su API_URL.
 app.include_router(auth.router, prefix=f"{settings.API_V1_STR}/auth", tags=["auth"])
 app.include_router(financial_data.router, prefix=f"{settings.API_V1_STR}/financial", tags=["financial"])
 app.include_router(analytics.router, prefix=f"{settings.API_V1_STR}/analytics", tags=["analytics"])
 app.include_router(ai_router.router, prefix=f"{settings.API_V1_STR}/ai", tags=["ai-anomalies"])
 
-# Fin de configuración de rutas
 

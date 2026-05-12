@@ -35,18 +35,26 @@ export default function CompanyManager({
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newName, setNewName] = useState('');
   const [newNit, setNewNit] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Validación NIT: Debe tener exactamente 14 dígitos (ignorando guiones)
+  // Validación NIT: Aceptamos entre 9 y 14 dígitos (DUI/NIT personas naturales y jurídicas)
   const nitDigits = newNit.replace(/\D/g, '');
-  const isNitValid = nitDigits.length === 14;
+  const isNitValid = nitDigits.length >= 9 && nitDigits.length <= 14;
   const isFormValid = newName.length >= 3 && isNitValid;
 
-  const handleAddSubmit = () => {
-    if (isFormValid) {
-      onAddCompany(newName, newNit);
-      setIsModalOpen(false);
-      setNewName('');
-      setNewNit('');
+  const handleAddSubmit = async () => {
+    if (isFormValid && !isSubmitting) {
+      setIsSubmitting(true);
+      try {
+        await onAddCompany(newName, newNit);
+        setIsModalOpen(false);
+        setNewName('');
+        setNewNit('');
+      } catch (err) {
+        // El error ya se maneja en el padre usualmente, pero aquí evitamos cerrar el modal
+      } finally {
+        setIsSubmitting(false);
+      }
     }
   };
 
@@ -166,20 +174,22 @@ export default function CompanyManager({
                   onChange={(e) => setNewName(e.target.value)}
                   placeholder="Ej. Distribuciones García S.A. de C.V."
                   className="w-full px-4 py-3 rounded-xl border border-zinc-300 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 outline-none transition-all text-sm font-medium"
+                  disabled={isSubmitting}
                 />
               </div>
               
               <div>
-                <label className="block text-[11px] font-black text-zinc-500 uppercase tracking-widest mb-2">NIT (14 dígitos)</label>
+                <label className="block text-[11px] font-black text-zinc-500 uppercase tracking-widest mb-2">NIT / Identificación</label>
                 <div className="relative">
                   <input 
                     type="text" 
                     value={newNit}
                     onChange={(e) => setNewNit(e.target.value)}
-                    placeholder="0614-DDMMAA-XXX-X"
+                    placeholder="Formato: 0000-000000-000-0"
                     className={`w-full px-4 py-3 rounded-xl border outline-none transition-all text-sm font-medium ${
                       newNit.length > 0 ? (isNitValid ? 'border-emerald-500 focus:ring-2 focus:ring-emerald-200' : 'border-amber-500 focus:ring-2 focus:ring-amber-200') : 'border-zinc-300 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200'
                     }`}
+                    disabled={isSubmitting}
                   />
                   {newNit.length > 0 && (
                     <div className={`absolute right-3 top-3 ${isNitValid ? 'text-emerald-500' : 'text-amber-500'}`}>
@@ -188,8 +198,9 @@ export default function CompanyManager({
                   )}
                 </div>
                 {newNit.length > 0 && !isNitValid && (
-                  <p className="text-amber-600 text-[10px] font-bold mt-2">Formato inválido: el NIT debe contener 14 dígitos numéricos.</p>
+                  <p className="text-amber-600 text-[10px] font-bold mt-2">Formato inválido: el NIT debe contener entre 9 y 14 dígitos numéricos.</p>
                 )}
+                <p className="text-zinc-400 text-[10px] font-medium mt-1">Aceptamos NIT jurídico (14 dígitos) o identificación natural (9 dígitos).</p>
               </div>
             </div>
 
@@ -197,17 +208,23 @@ export default function CompanyManager({
               <button 
                 onClick={() => setIsModalOpen(false)}
                 className="flex-1 px-4 py-3 rounded-xl bg-zinc-100 text-zinc-600 text-xs font-black uppercase tracking-widest hover:bg-zinc-200 transition-colors"
+                disabled={isSubmitting}
               >
                 Cancelar
               </button>
               <button 
                 onClick={handleAddSubmit}
-                disabled={!isFormValid}
+                disabled={!isFormValid || isSubmitting}
                 className={`flex-1 px-4 py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${
-                  isFormValid ? 'bg-zinc-900 text-white shadow-lg shadow-zinc-900/20 hover:bg-emerald-600' : 'bg-zinc-100 text-zinc-400 cursor-not-allowed'
+                  isFormValid && !isSubmitting ? 'bg-zinc-900 text-white shadow-lg shadow-zinc-900/20 hover:bg-emerald-600' : 'bg-zinc-100 text-zinc-400 cursor-not-allowed'
                 }`}
               >
-                Registrar
+                {isSubmitting ? (
+                  <div className="flex items-center justify-center gap-2">
+                    <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    Procesando...
+                  </div>
+                ) : 'Registrar'}
               </button>
             </div>
           </div>

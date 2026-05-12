@@ -31,7 +31,9 @@ def process_csv_task(file_path: str, tenant_id: str):
     logger.info(f"Iniciando procesamiento DuckDB para archivo: {file_path}")
     
     try:
-        # 1. Conexión a DuckDB (In-Memory para máxima velocidad)
+        # 1. Conexión a DuckDB (In-Memory Engine)
+        # INFRAESTRUCTURA: Utilizamos ':memory:' para garantizar que los datos no persistan en disco
+        # innecesariamente y para máxima velocidad analítica.
         con = duckdb.connect(database=':memory:')
         
         # 2. Análisis Vectorial con DuckDB

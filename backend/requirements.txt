@@ -1,8 +1,13 @@
 fastapi
-uvicorn
+uvicorn[standard]
 duckdb
 python-multipart
 supabase
 python-dotenv
-pydantic
+pydantic[email]
 pydantic-settings
+python-magic; sys_platform != 'win32'
+python-magic-bin; sys_platform == 'win32'
+celery
+redis
+gunicorn

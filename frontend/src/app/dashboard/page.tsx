@@ -118,26 +118,43 @@ export default function DashboardPage() {
     const [isAdmin, setIsAdmin] = useState(false);
 
     const handleAddCompany = async (name: string, nit: string) => {
-        if (!userProfile) return;
-        
+        if (!userProfile?.tenant_id || !userProfile?.id) {
+            alert("No se pudo identificar su perfil o Tenant. \n\nEsto puede suceder si su usuario se registró antes de activar el sistema de roles. \n\nPor favor, contacte al administrador para vincular su cuenta o intente cerrar sesión y volver a entrar.");
+            return;
+        }
+
         try {
-            const { data, error } = await supabase
+            console.log("Registrando empresa para tenant:", userProfile.tenant_id);
+            const { data, error: insertError } = await supabase
                 .from('companies')
                 .insert([{
                     tenant_id: userProfile.tenant_id,
                     user_id: userProfile.id,
                     name,
-                    nit,
-                    status: 'active'
+                    nit
                 }])
                 .select()
                 .single();
 
-            if (error) throw error;
-            if (data) setCompaniesList([data as any, ...companiesList]);
-        } catch (err) {
-            console.error("Error adding company:", err);
-            alert("No se pudo registrar la empresa.");
+            if (insertError) {
+                console.error("Supabase error adding company:", insertError);
+                throw insertError;
+            }
+
+            if (data) {
+                const newCompany: Company = {
+                    ...data,
+                    status: 'active',
+                    totalRecords: 0
+                };
+                setCompaniesList(prev => [newCompany, ...prev]);
+                console.log("Empresa registrada exitosamente:", newCompany);
+                return data;
+            }
+        } catch (err: any) {
+            console.error("Error capturado en handleAddCompany:", err);
+            alert(`Error al registrar la empresa: ${err.message || 'Error desconocido'}`);
+            throw err; // Propagar para que el componente hijo (CompanyManager) detenga el loading
         }
     };
 
@@ -161,7 +178,7 @@ export default function DashboardPage() {
                 setSession(currentSession);
 
                 // 1. Fetch User Profile and Tenant
-                const { data: profile } = await supabase
+                const { data: profile, error: profileError } = await supabase
                     .from('user_profiles')
                     .select('*, tenants(*)')
                     .eq('id', currentSession.user.id)
@@ -182,6 +199,11 @@ export default function DashboardPage() {
                     
                     const trialEnds = new Date(profile.tenants.trial_ends_at);
                     setIsTrialExpired(trialEnds < new Date());
+                } else {
+                    console.warn("No se encontró perfil para el usuario actual:", currentSession.user.id);
+                    if (!isMasterAdmin) {
+                        setError("Su perfil no ha sido inicializado correctamente. Por favor, intente cerrar sesión y volver a entrar, o contacte a soporte.");
+                    }
                 }
 
                 // 2. Fetch Companies
@@ -189,33 +211,45 @@ export default function DashboardPage() {
                     .from('companies')
                     .select('*')
                     .order('name');
-                setCompaniesList(companies || []);
+                
+                // Aseguramos que todas tengan un status para la UI
+                const mappedCompanies = (companies || []).map(c => ({
+                    ...c,
+                    status: c.status || 'active',
+                    totalRecords: c.totalRecords || 0
+                }));
+                setCompaniesList(mappedCompanies as any);
 
-                // 3. Fetch Analytics from Backend
+                // 3. Fetch Analytics from Backend (Only if we have a session)
                 let headers: HeadersInit = { "Authorization": `Bearer ${currentSession.access_token}` };
                 setAuthToken(currentSession.access_token);
 
                 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
                 
-                const [trends, types, iva, top, health] = await Promise.all([
-                    fetch(`${API_URL}/analytics/financial-trends`, { headers }).then(r => r.json()),
-                    fetch(`${API_URL}/analytics/types-breakdown`, { headers }).then(r => r.json()),
-                    fetch(`${API_URL}/analytics/tax-summary/iva-liquidation`, { headers }).then(r => r.json()),
-                    fetch(`${API_URL}/analytics/tax-summary/top-entities`, { headers }).then(r => r.json()),
-                    fetch(`${API_URL}/analytics/tax-summary/document-health`, { headers }).then(r => r.json())
-                ]);
+                try {
+                    const [trends, types, iva, top, health] = await Promise.all([
+                        fetch(`${API_URL}/analytics/financial-trends`, { headers }).then(r => r.json()),
+                        fetch(`${API_URL}/analytics/types-breakdown`, { headers }).then(r => r.json()),
+                        fetch(`${API_URL}/analytics/tax-summary/iva-liquidation`, { headers }).then(r => r.json()),
+                        fetch(`${API_URL}/analytics/tax-summary/top-entities`, { headers }).then(r => r.json()),
+                        fetch(`${API_URL}/analytics/tax-summary/document-health`, { headers }).then(r => r.json())
+                    ]);
 
-                setTrendsData(trends.data || []);
-                setTypesData(types.data || { ventas: [], gastos: [] });
-                setTaxData({
-                    liquidation: iva.data,
-                    topEntities: top.data,
-                    health: health.data
-                });
+                    setTrendsData(trends.data || []);
+                    setTypesData(types.data || { ventas: [], gastos: [] });
+                    setTaxData({
+                        liquidation: iva.data,
+                        topEntities: top.data,
+                        health: health.data
+                    });
+                } catch (apiErr) {
+                    console.error("Backend API might be down or unreachable:", apiErr);
+                    // Silently fail analytics if backend is not ready, dashboard will show 0s
+                }
 
             } catch (err: unknown) {
                 console.error("Fetch Error:", err);
-                setError(null); 
+                setError("Error al cargar los datos del ecosistema."); 
             } finally {
                 setLoading(false);
             }
@@ -263,6 +297,7 @@ export default function DashboardPage() {
         { group: "TRIBUTACIÓN", items: [
             { id: 'fiscal-summary', label: 'Liquidación de IVA', icon: Icons.Tax },
             { id: 'annexes', label: 'Anexos de Hacienda', icon: Icons.Tax },
+            { id: 'companies', label: 'Carga de Datos', icon: Icons.Upload },
         ]},
     ];
 
@@ -447,6 +482,27 @@ export default function DashboardPage() {
                             
                             {activeTab === 'overview' && (
                                 <div className="space-y-12">
+                                    {/* Hint for Accountants */}
+                                    {userProfile?.role === 'contador' && persona === 'business' && (
+                                        <div className="bg-blue-600 text-white p-6 rounded-3xl flex items-center justify-between shadow-xl shadow-blue-600/20 animate-bounce">
+                                            <div className="flex items-center gap-4">
+                                                <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center">
+                                                    <Icons.Upload />
+                                                </div>
+                                                <div>
+                                                    <p className="text-sm font-black uppercase tracking-widest">¿Buscando el módulo de carga?</p>
+                                                    <p className="text-xs font-medium opacity-80">Cambie a la vista de "Cumplimiento Fiscal" en la parte superior para gestionar empresas y subir documentos.</p>
+                                                </div>
+                                            </div>
+                                            <button 
+                                                onClick={() => { setPersona('fiscal'); setActiveTab('fiscal-summary'); }}
+                                                className="bg-white text-blue-600 px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-zinc-100 transition-colors"
+                                            >
+                                                Ir a Vista Fiscal
+                                            </button>
+                                        </div>
+                                    )}
+
                                     {/* Key Indicators Grid */}
                                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
                                         {[
@@ -626,7 +682,7 @@ export default function DashboardPage() {
                                                         ← Volver al Gestor
                                                     </button>
                                                     <div className="flex flex-col">
-                                                        <span className="text-xl font-black tracking-tight text-zinc-900">{selectedCompanyForUpload.razonSocial}</span>
+                                                        <span className="text-xl font-black tracking-tight text-zinc-900">{selectedCompanyForUpload.name}</span>
                                                         <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">NIT: {selectedCompanyForUpload.nit}</span>
                                                     </div>
                                                 </div>
@@ -812,29 +868,32 @@ export default function DashboardPage() {
                                             </button>
                                         )}
 
-                                        {isAdmin && (
-                                            <>
-                                                <button 
-                                                    onClick={() => setActiveTab('admin')}
-                                                    className="p-8 bg-zinc-50 border border-zinc-200 rounded-3xl group hover:border-blue-500/50 transition-colors text-left"
-                                                >
-                                                    <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center shadow-sm mb-6 group-hover:bg-blue-600 group-hover:text-white transition-all">
-                                                        <Icons.Settings />
-                                                    </div>
-                                                    <p className="text-[11px] font-black text-zinc-900 uppercase tracking-widest mb-3">Bóveda Administrativa</p>
-                                                    <p className="text-sm text-zinc-500 font-medium">Gestión de membresías, cupones y auditoría global de la plataforma.</p>
-                                                </button>
-                                                <button 
-                                                    onClick={() => setActiveTab('invitations')}
-                                                    className="p-8 bg-zinc-50 border border-zinc-200 rounded-3xl group hover:border-blue-500/50 transition-colors text-left"
-                                                >
-                                                    <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center shadow-sm mb-6 group-hover:bg-blue-600 group-hover:text-white transition-all">
-                                                        <Icons.User />
-                                                    </div>
-                                                    <p className="text-[11px] font-black text-zinc-900 uppercase tracking-widest mb-3">Gestión de Invitaciones</p>
-                                                    <p className="text-sm text-zinc-500 font-medium">Envíe invitaciones a nuevos usuarios y gestione roles administrativos.</p>
-                                                </button>
-                                            </>
+                                        {/* Bóveda Administrativa: Solo para el Administrador Global */}
+                                        {(isAdmin && session?.user?.email === 'garcia.integrum1@gmail.com') && (
+                                            <button 
+                                                onClick={() => setActiveTab('admin')}
+                                                className="p-8 bg-zinc-50 border border-zinc-200 rounded-3xl group hover:border-blue-500/50 transition-colors text-left"
+                                            >
+                                                <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center shadow-sm mb-6 group-hover:bg-blue-600 group-hover:text-white transition-all">
+                                                    <Icons.Settings />
+                                                </div>
+                                                <p className="text-[11px] font-black text-zinc-900 uppercase tracking-widest mb-3">Bóveda Administrativa</p>
+                                                <p className="text-sm text-zinc-500 font-medium">Gestión de membresías, cupones y auditoría global de la plataforma.</p>
+                                            </button>
+                                        )}
+
+                                        {/* Gestión de Invitaciones: Para Contador y Administrador */}
+                                        {(isAdmin || userProfile?.role === 'contador') && (
+                                            <button 
+                                                onClick={() => setActiveTab('invitations')}
+                                                className="p-8 bg-zinc-50 border border-zinc-200 rounded-3xl group hover:border-blue-500/50 transition-colors text-left"
+                                            >
+                                                <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center shadow-sm mb-6 group-hover:bg-blue-600 group-hover:text-white transition-all">
+                                                    <Icons.User />
+                                                </div>
+                                                <p className="text-[11px] font-black text-zinc-900 uppercase tracking-widest mb-3">Gestión de Invitaciones</p>
+                                                <p className="text-sm text-zinc-500 font-medium">Envíe invitaciones a nuevos usuarios y gestione roles administrativos.</p>
+                                            </button>
                                         )}
                                     </div>
                                 </div>

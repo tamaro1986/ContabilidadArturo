@@ -42,19 +42,24 @@ export default function RegisterPage() {
     setError(null)
     
     try {
-      const { error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: {
-            full_name: fullName,
-            tenant_name: tenantName,
-            promo_code: promoCode,
-          }
-        }
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'
+      const response = await fetch(`${apiUrl}/auth/register`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email,
+          password,
+          full_name: fullName,
+          tenant_name: tenantName,
+        }),
       })
 
-      if (error) throw error
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.detail || 'Error en el registro')
+      }
 
       // Redirect to login (Supabase might require email confirmation)
       router.push('/login?registered=true')

@@ -8,7 +8,11 @@ class Settings(BaseSettings):
     SUPABASE_KEY: str = os.getenv("SUPABASE_KEY", "")
     SUPABASE_SERVICE_ROLE_KEY: str = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
     DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/postgres")
+    REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
     MOCK_MODE: bool = True
+    
+    # Security
+    CORS_ORIGINS: list[str] = os.getenv("CORS_ORIGINS", "*").split(",")
 
     # AI / RAG Configuration
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")

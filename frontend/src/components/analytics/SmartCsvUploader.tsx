@@ -161,7 +161,7 @@ export default function SmartCsvUploader({ company, onValidationComplete, onBack
           <div className="flex items-center gap-2 mt-1">
             <div className="flex items-center gap-1.5 px-2 py-1 bg-zinc-100 rounded-md text-[10px] font-black uppercase tracking-widest text-zinc-600">
               <Icons.Building />
-              {company.razonSocial}
+              {company.name}
             </div>
             <span className="text-[10px] font-bold text-zinc-400 uppercase">NIT: {company.nit}</span>
           </div>
