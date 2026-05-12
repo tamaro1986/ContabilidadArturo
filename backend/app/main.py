@@ -4,7 +4,7 @@ from pathlib import Path
 from fastapi import FastAPI, UploadFile, File, BackgroundTasks, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
-from app.api.routes import auth, financial_data, analytics, ai as ai_router
+from app.api.routes import auth, financial_data, analytics, ai as ai_router, upload_history
 from app.services.processor import process_csv_task
 
 app = FastAPI(
@@ -20,8 +20,9 @@ app.add_middleware(
     allow_origins=settings.CORS_ORIGINS,
     allow_origin_regex=settings.CORS_ORIGIN_REGEX,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 # Directorio temporal para procesamiento seguro
@@ -105,6 +106,7 @@ async def upload_and_process_csv(
 # ── Router Mounting ──────────────────────────────────────────────────────────
 app.include_router(auth.router, prefix=f"{settings.API_V1_STR}/auth", tags=["auth"])
 app.include_router(financial_data.router, prefix=f"{settings.API_V1_STR}/financial", tags=["financial"])
+app.include_router(upload_history.router, prefix=f"{settings.API_V1_STR}/uploads", tags=["traceability"])
 app.include_router(analytics.router, prefix=f"{settings.API_V1_STR}/analytics", tags=["analytics"])
 app.include_router(ai_router.router, prefix=f"{settings.API_V1_STR}/ai", tags=["ai-anomalies"])
 
