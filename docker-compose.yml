@@ -9,6 +9,7 @@ services:
     environment:
       - MOCK_MODE=False
       - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
       - DATABASE_URL=${DATABASE_URL}
       - SUPABASE_URL=${SUPABASE_URL}
       - SUPABASE_KEY=${SUPABASE_KEY}
@@ -16,6 +17,26 @@ services:
       - CORS_ORIGINS=http://localhost:3000,https://contabilidad-arturo.vercel.app
     depends_on:
       - redis
+    networks:
+      - app-network
+
+  # Celery Worker for Background Tasks
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: celery -A app.core.celery_app worker --loglevel=info
+    environment:
+      - MOCK_MODE=False
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - DATABASE_URL=${DATABASE_URL}
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_KEY=${SUPABASE_KEY}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+    depends_on:
+      - redis
+      - backend
     networks:
       - app-network
 
@@ -31,7 +52,7 @@ services:
     networks:
       - app-network
 
-  # Redis for Caching
+  # Redis for Caching and Celery Broker
   redis:
     image: redis:alpine
     ports:

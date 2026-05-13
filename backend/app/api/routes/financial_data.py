@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File,
 from supabase import Client
 import uuid
 import magic
-from app.services.supabase_client import get_supabase_client
+from app.services.supabase_client import get_supabase_client, get_supabase_admin_client
 from app.api.dependencies.roles import require_contador
 from app.worker.tasks import process_financial_csv
 
@@ -17,7 +17,7 @@ async def upload_financial_data(
     document_type: str = Form(...),
     file: UploadFile = File(...),
     contador_data: dict = Depends(require_contador),
-    supabase: Client = Depends(get_supabase_client)
+    supabase_admin: Client = Depends(get_supabase_admin_client)
 ):
     """Sube un CSV o ZIP con datos financieros de Hacienda."""
     # 1. Validaciones de Seguridad
@@ -39,7 +39,7 @@ async def upload_financial_data(
     # 2. Subir a Storage
     try:
         file_content = await file.read()
-        supabase.storage.from_(BUCKET_NAME).upload(
+        supabase_admin.storage.from_(BUCKET_NAME).upload(
             file=file_content,
             path=safe_filename,
             file_options={"content-type": mime_type}
@@ -47,10 +47,24 @@ async def upload_financial_data(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error en Storage: {str(e)}")
     
-    # 3. Registrar Historial en csv_upload_history
+    # 3. Registrar Historial en tax_documents y csv_upload_history
     upload_id = str(uuid.uuid4())
+    tax_doc_id = str(uuid.uuid4())
+    
     try:
-        supabase.table("csv_upload_history").insert({
+        # Registrar en tax_documents (utilizado por el Dashboard)
+        supabase_admin.table("tax_documents").insert({
+            "id": tax_doc_id,
+            "tenant_id": tenant_id,
+            "company_id": company_id,
+            "document_type": document_type,
+            "filename": file.filename,
+            "file_path": safe_filename,
+            "status": "pending"
+        }).execute()
+        
+        # Registrar en csv_upload_history (historial detallado de carga)
+        supabase_admin.table("csv_upload_history").insert({
             "id": upload_id,
             "tenant_id": tenant_id,
             "company_id": company_id,
@@ -62,7 +76,7 @@ async def upload_financial_data(
         }).execute()
     except Exception as e:
         print(f"Error registering upload in DB: {e}")
-        raise HTTPException(status_code=500, detail=f"Error al registrar historial: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error al registrar documento o historial: {str(e)}")
 
     # 4. Encolar Tarea usando BackgroundTasks de FastAPI
     background_tasks.add_task(
@@ -71,7 +85,8 @@ async def upload_financial_data(
         file_path=safe_filename,
         tenant_id=tenant_id,
         company_id=company_id,
-        upload_id=upload_id
+        upload_id=upload_id,
+        tax_doc_id=tax_doc_id
     )
     
     return {

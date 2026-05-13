@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { supabase } from "@/lib/supabaseClient";
 
 interface Message {
   role: "user" | "assistant";
@@ -9,7 +10,7 @@ interface Message {
 }
 
 interface AiChatWidgetProps {
-  token: string;
+  token?: string; // Made optional as we fetch it fresh
   apiUrl: string;
 }
 
@@ -49,10 +50,13 @@ export default function AiChatWidget({ token, apiUrl }: AiChatWidgetProps) {
         "Content-Type": "application/json",
       };
 
-      if (token) {
+      const { data: { session } } = await supabase.auth.getSession();
+      const currentToken = session?.access_token;
+
+      if (currentToken) {
         // Soporte para MOCK_MODE y Producción
-        headers["Authorization"] = `Bearer ${token}`;
-        headers["X-Mock-Tenant-ID"] = token;
+        headers["Authorization"] = `Bearer ${currentToken}`;
+        headers["X-Mock-Tenant-ID"] = currentToken;
       }
 
       const response = await fetch(`${apiUrl}/ai/chat`, {

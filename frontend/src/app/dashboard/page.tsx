@@ -18,18 +18,17 @@ import {
 import CustomerAnalysisTable from "../../components/analytics/CustomerAnalysisTable";
 import CustomerDetailSlideOver from "../../components/analytics/CustomerDetailSlideOver";
 import CustomerRevenueTreemap from '@/components/analytics/CustomerRevenueTreemap';
-import { customerMockData } from "../../data/customerMockData";
 import { CustomerRecord } from "@/types/customerAnalysis";
 
 import SupplierExpenseTreemap from "../../components/analytics/SupplierExpenseTreemap";
 import SupplierAnalysisTable from "../../components/analytics/SupplierAnalysisTable";
 import SupplierDetailSlideOver from "../../components/analytics/SupplierDetailSlideOver";
-import { supplierMockData } from "../../data/supplierMockData";
 import { SupplierRecord } from "@/types/supplierAnalysis";
 
 import CompanyManager from "../../components/analytics/CompanyManager";
 import SmartCsvUploader from "../../components/analytics/SmartCsvUploader";
 import ValidationAlerts from "../../components/analytics/ValidationAlerts";
+import UploadHistory from "../../components/analytics/UploadHistory";
 import { Company, CsvValidationResult } from "@/types/companyTypes";
 import Paywall from "../../components/auth/Paywall";
 import AdminPanel from "../../components/admin/AdminPanel";
@@ -93,22 +92,27 @@ export default function DashboardPage() {
     const [trendsData, setTrendsData] = useState<TrendData[]>([]);
     const [typesData, setTypesData] = useState<{ ventas: BreakdownData[]; gastos: BreakdownData[] } | null>(null);
     const [taxData, setTaxData] = useState<TaxData | null>(null);
+    const [customerData, setCustomerData] = useState<CustomerRecord[]>([]);
+    const [supplierData, setSupplierData] = useState<SupplierRecord[]>([]);
+    const [selectedCustomer, setSelectedCustomer] = useState<CustomerRecord | null>(null);
+    const [selectedSupplier, setSelectedSupplier] = useState<SupplierRecord | null>(null);
     const [authToken, setAuthToken] = useState("");
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
     // Customer Module State
-    const [selectedCustomer, setSelectedCustomer] = useState<CustomerRecord | null>(null);
     const [isSlideOverOpen, setIsSlideOverOpen] = useState(false);
 
     // Supplier Module State
-    const [selectedSupplier, setSelectedSupplier] = useState<SupplierRecord | null>(null);
     const [isSupplierSlideOverOpen, setIsSupplierSlideOverOpen] = useState(false);
 
     // Companies / Upload State
     const [companiesList, setCompaniesList] = useState<Company[]>([]);
     const [selectedCompanyForUpload, setSelectedCompanyForUpload] = useState<Company | null>(null);
     const [validationResult, setValidationResult] = useState<CsvValidationResult | null>(null);
+    const [isUploading, setIsUploading] = useState(false);
+    const [uploadError, setUploadError] = useState<string | null>(null);
+    const [refreshHistory, setRefreshHistory] = useState(0);
 
     // Trial / Admin State
     const [userProfile, setUserProfile] = useState<any>(null);
@@ -155,6 +159,49 @@ export default function DashboardPage() {
             console.error("Error capturado en handleAddCompany:", err);
             alert(`Error al registrar la empresa: ${err.message || 'Error desconocido'}`);
             throw err; // Propagar para que el componente hijo (CompanyManager) detenga el loading
+        }
+    };
+
+    const handleProcessFile = async () => {
+        if (!validationResult?.file || !selectedCompanyForUpload) return;
+        
+        setIsUploading(true);
+        setUploadError(null);
+        
+        const formData = new FormData();
+        formData.append('file', validationResult.file);
+        formData.append('company_id', selectedCompanyForUpload.id);
+        formData.append('document_type', validationResult.detectedType || 'ventas-contribuyentes');
+        
+        try {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (!session) throw new Error("No hay una sesión activa para procesar la carga.");
+
+            const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+            const response = await fetch(`${apiUrl}/financial/upload`, {
+                method: 'POST',
+                headers: {
+                    "Authorization": `Bearer ${session.access_token}`
+                },
+                body: formData,
+            });
+            
+            if (!response.ok) {
+                const err = await response.json();
+                throw new Error(err.detail || 'Error al procesar el archivo');
+            }
+            
+            // Éxito: Limpiar estados
+            setValidationResult(null);
+            setSelectedCompanyForUpload(null);
+            setRefreshHistory(prev => prev + 1);
+            alert("¡Archivo procesado con éxito! El historial se actualizará en unos segundos.");
+        } catch (err: any) {
+            console.error("Upload error:", err);
+            setUploadError(err.message);
+            alert(`Error al procesar: ${err.message}`);
+        } finally {
+            setIsUploading(false);
         }
     };
 
@@ -220,31 +267,53 @@ export default function DashboardPage() {
                 }));
                 setCompaniesList(mappedCompanies as any);
 
-                // 3. Fetch Analytics from Backend (Only if we have a session)
-                let headers: HeadersInit = { "Authorization": `Bearer ${currentSession.access_token}` };
-                setAuthToken(currentSession.access_token);
+                // 3. Fetch Analytics from Backend (Get fresh session for analytical calls)
+                const { data: { session: analyticalSession } } = await supabase.auth.getSession();
+                if (analyticalSession) {
+                    const token = analyticalSession.access_token;
+                    setAuthToken(token);
+                    const headers: HeadersInit = { 
+                        "Authorization": `Bearer ${token}`,
+                        "Content-Type": "application/json"
+                    };
 
-                const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
-                
-                try {
-                    const [trends, types, iva, top, health] = await Promise.all([
-                        fetch(`${API_URL}/analytics/financial-trends`, { headers }).then(r => r.json()),
-                        fetch(`${API_URL}/analytics/types-breakdown`, { headers }).then(r => r.json()),
-                        fetch(`${API_URL}/analytics/tax-summary/iva-liquidation`, { headers }).then(r => r.json()),
-                        fetch(`${API_URL}/analytics/tax-summary/top-entities`, { headers }).then(r => r.json()),
-                        fetch(`${API_URL}/analytics/tax-summary/document-health`, { headers }).then(r => r.json())
-                    ]);
+                    const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+                    
+                    try {
+                        const fetchWithAuth = async (url: string) => {
+                            const res = await fetch(url, { headers });
+                            if (!res.ok) {
+                                if (res.status === 401) {
+                                    console.error("Unauthorized call to:", url);
+                                }
+                                throw new Error(`API Error ${res.status} on ${url}`);
+                            }
+                            return res.json();
+                        };
 
-                    setTrendsData(trends.data || []);
-                    setTypesData(types.data || { ventas: [], gastos: [] });
-                    setTaxData({
-                        liquidation: iva.data,
-                        topEntities: top.data,
-                        health: health.data
-                    });
-                } catch (apiErr) {
-                    console.error("Backend API might be down or unreachable:", apiErr);
-                    // Silently fail analytics if backend is not ready, dashboard will show 0s
+                        const [trends, types, iva, top, health, rfm, srfm] = await Promise.all([
+                            fetchWithAuth(`${API_URL}/analytics/financial-trends`),
+                            fetchWithAuth(`${API_URL}/analytics/types-breakdown`),
+                            fetchWithAuth(`${API_URL}/analytics/tax-summary/iva-liquidation`),
+                            fetchWithAuth(`${API_URL}/analytics/tax-summary/top-entities`),
+                            fetchWithAuth(`${API_URL}/analytics/tax-summary/document-health`),
+                            fetchWithAuth(`${API_URL}/analytics/rfm`),
+                            fetchWithAuth(`${API_URL}/analytics/supplier-rfm`)
+                        ]);
+
+                        setTrendsData(trends.data || []);
+                        setTypesData(types.data || { ventas: [], gastos: [] });
+                        setTaxData({
+                            liquidation: iva.data,
+                            topEntities: top.data,
+                            health: health.data
+                        });
+                        setCustomerData(rfm.data || []);
+                        setSupplierData(srfm.data || []);
+                    } catch (apiErr) {
+                        console.error("Backend API Error:", apiErr);
+                        // Silently fail analytics if backend is not ready, dashboard will show 0s
+                    }
                 }
 
             } catch (err: unknown) {
@@ -255,7 +324,7 @@ export default function DashboardPage() {
             }
         };
         fetchAll();
-    }, []);
+    }, [refreshHistory]);
 
     // ── Paywall Guard ──────────────────────────────────────────────────────────────
     if (isTrialExpired && !loading) {
@@ -412,7 +481,7 @@ export default function DashboardPage() {
                                 <div className="flex items-center gap-3 pl-2 group cursor-pointer">
                                     <div className="text-right hidden sm:block">
                                         <p className="text-sm font-bold text-zinc-900 leading-none">
-                                            {userProfile?.full_name || session?.user?.user_metadata?.full_name || "Usuario Maestro"}
+                                        {userProfile?.full_name && userProfile.full_name !== 'Admin Seed' ? userProfile.full_name : (session?.user?.user_metadata?.name || "Arturo Integrum")}
                                         </p>
                                         <p className="text-[10px] font-black text-zinc-400 uppercase tracking-tighter mt-1">
                                             {isAdmin ? "Administrador Global" : userProfile?.role || "Consultando..."}
@@ -607,7 +676,7 @@ export default function DashboardPage() {
                                             </div>
                                             
                                             <SupplierExpenseTreemap 
-                                                data={supplierMockData}
+                                                data={supplierData}
                                                 onSelectSupplier={(s) => {
                                                     setSelectedSupplier(s);
                                                     setIsSupplierSlideOverOpen(true);
@@ -638,7 +707,7 @@ export default function DashboardPage() {
                                             <button className="text-[10px] font-black text-indigo-600 uppercase tracking-widest hover:underline">Exportar Reporte Maestro</button>
                                         </div>
                                         <SupplierAnalysisTable 
-                                            data={supplierMockData}
+                                            data={supplierData}
                                             onSelectSupplier={(s) => {
                                                 setSelectedSupplier(s);
                                                 setIsSupplierSlideOverOpen(true);
@@ -664,13 +733,18 @@ export default function DashboardPage() {
                                         ← Volver a Configuración
                                     </button>
                                     {!selectedCompanyForUpload ? (
-                                        <div className="bg-white border border-zinc-200 rounded-[2.5rem] p-10 shadow-2xl shadow-zinc-200/50">
-                                            <CompanyManager 
-                                                companies={companiesList}
-                                                onSelectCompany={(company) => setSelectedCompanyForUpload(company)}
-                                                onAddCompany={handleAddCompany}
-                                            />
-                                        </div>
+                                        <>
+                                            <div className="bg-white border border-zinc-200 rounded-[2.5rem] p-10 shadow-2xl shadow-zinc-200/50">
+                                                <CompanyManager 
+                                                    companies={companiesList}
+                                                    onSelectCompany={(company) => setSelectedCompanyForUpload(company)}
+                                                    onAddCompany={handleAddCompany}
+                                                />
+                                            </div>
+                                            <div className="mt-8">
+                                                <UploadHistory refreshTrigger={refreshHistory} />
+                                            </div>
+                                        </>
                                     ) : (
                                         <div className="space-y-6">
                                             {!validationResult && (
@@ -691,13 +765,13 @@ export default function DashboardPage() {
                                                 {validationResult ? (
                                                     <ValidationAlerts 
                                                         result={validationResult}
-                                                        onDismiss={() => {
-                                                            setValidationResult(null);
-                                                            setSelectedCompanyForUpload(null);
-                                                        }}
+                                                        onDismiss={handleProcessFile}
                                                         onRetry={() => {
                                                             setValidationResult(null);
+                                                            setUploadError(null);
                                                         }}
+                                                        isProcessing={isUploading}
+                                                        processingError={uploadError}
                                                     />
                                                 ) : (
                                                     <SmartCsvUploader 
@@ -766,7 +840,7 @@ export default function DashboardPage() {
                                         </div>
 
                                         <CustomerRevenueTreemap 
-                                            data={customerMockData}
+                                            data={customerData}
                                             topCount={5}
                                             onSelectCustomer={(c) => {
                                                 setSelectedCustomer(c);
@@ -795,7 +869,7 @@ export default function DashboardPage() {
                                     </div>
 
                                     <CustomerAnalysisTable 
-                                        data={customerMockData} 
+                                        data={customerData} 
                                         onSelectCustomer={(c) => {
                                             setSelectedCustomer(c);
                                             setIsSlideOverOpen(true);

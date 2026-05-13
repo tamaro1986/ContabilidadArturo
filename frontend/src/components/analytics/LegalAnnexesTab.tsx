@@ -80,9 +80,9 @@ export default function LegalAnnexesTab() {
                 const mockTenantId = localStorage.getItem("X-Mock-Tenant-ID");
                 if (mockTenantId) { headers = { "X-Mock-Tenant-ID": mockTenantId }; }
                 else {
-                    const { data: sessionData } = await supabase.auth.getSession();
-                    const token = sessionData?.session?.access_token;
-                    if (!token) throw new Error("No autenticado");
+                    const { data: { session } } = await supabase.auth.getSession();
+                    const token = session?.access_token;
+                    if (!token) throw new Error("Sesión expirada. Por favor recargue la página.");
                     headers = { "Authorization": `Bearer ${token}` };
                 }
                 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";

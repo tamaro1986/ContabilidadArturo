@@ -221,24 +221,30 @@ export function AnomalyAlertPanel({ token }: AnomalyAlertPanelProps) {
   const [page, setPage] = useState(0);
   const PAGE_SIZE = 20;
 
-  const headers = useMemo(() => ({ 
-    Authorization: `Bearer ${token}`, 
-    "X-Mock-Tenant-ID": token,
-    "Content-Type": "application/json" 
-  }), [token]);
-
   const fetchData = useCallback(async (isMounted = true) => {
-    if (isMounted) {
-      setLoading(true);
-      setError(null);
-    }
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      const currentHeaders = {
+        Authorization: `Bearer ${session.access_token}`,
+        "Content-Type": "application/json"
+      };
+
+      if (isMounted) {
+        setLoading(true);
+        setError(null);
+      }
+
       const [listRes, summaryRes] = await Promise.all([
-        fetch(`${API_BASE}/ai/anomalies?limit=${PAGE_SIZE}&offset=${page * PAGE_SIZE}`, { headers }),
-        fetch(`${API_BASE}/ai/anomalies/summary`, { headers }),
+        fetch(`${API_BASE}/ai/anomalies?limit=${PAGE_SIZE}&offset=${page * PAGE_SIZE}`, { headers: currentHeaders }),
+        fetch(`${API_BASE}/ai/anomalies/summary`, { headers: currentHeaders }),
       ]);
 
-      if (!listRes.ok) throw new Error(`HTTP ${listRes.status}`);
+      if (!listRes.ok) {
+        if (listRes.status === 401) console.error("Unauthorized in list anomalies");
+        throw new Error(`HTTP ${listRes.status}`);
+      }
       if (!summaryRes.ok) throw new Error(`HTTP ${summaryRes.status}`);
 
       const listData = await listRes.json();
@@ -255,12 +261,22 @@ export function AnomalyAlertPanel({ token }: AnomalyAlertPanelProps) {
     } finally {
       if (isMounted) setLoading(false);
     }
-  }, [headers, page]);
+  }, [page]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
     try {
-      await fetch(`${API_BASE}/ai/anomalies/refresh`, { method: "POST", headers });
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error("No hay sesión activa");
+
+      const headers = {
+        Authorization: `Bearer ${session.access_token}`,
+        "Content-Type": "application/json"
+      };
+
+      const res = await fetch(`${API_BASE}/ai/anomalies/refresh`, { method: "POST", headers });
+      if (!res.ok) throw new Error(`Error ${res.status} al refrescar`);
+      
       setPage(0);
       await fetchData();
     } catch (e: unknown) {

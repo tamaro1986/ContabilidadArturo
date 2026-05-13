@@ -86,6 +86,7 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 -- Drop existing policies to recreate them cleanly
 DROP POLICY IF EXISTS "Admins: Full access to companies" ON public.companies;
 DROP POLICY IF EXISTS "Contadors can perform all actions on tenant companies" ON public.companies;
+DROP POLICY IF EXISTS "Contadors: Full access to tenant companies" ON public.companies;
 
 CREATE POLICY "Admins: Full access to companies" ON public.companies FOR ALL 
     TO authenticated
@@ -106,6 +107,7 @@ CREATE POLICY "Contadors: Full access to tenant companies" ON public.companies F
 -- Same for tax_documents
 DROP POLICY IF EXISTS "Admins: Full access to tax_documents" ON public.tax_documents;
 DROP POLICY IF EXISTS "Contadors can perform all actions on tenant tax documents" ON public.tax_documents;
+DROP POLICY IF EXISTS "Contadors: Full access to tenant tax documents" ON public.tax_documents;
 
 CREATE POLICY "Admins: Full access to tax_documents" ON public.tax_documents FOR ALL 
     TO authenticated

@@ -6,6 +6,8 @@ interface ValidationAlertsProps {
   result: CsvValidationResult | null;
   onDismiss: () => void;
   onRetry: () => void;
+  isProcessing?: boolean;
+  processingError?: string | null;
 }
 
 const Icons = {
@@ -23,7 +25,13 @@ const Icons = {
   )
 };
 
-export default function ValidationAlerts({ result, onDismiss, onRetry }: ValidationAlertsProps) {
+export default function ValidationAlerts({ 
+  result, 
+  onDismiss, 
+  onRetry, 
+  isProcessing = false,
+  processingError = null
+}: ValidationAlertsProps) {
   if (!result) return null;
 
   if (result.isValid) {
@@ -33,8 +41,20 @@ export default function ValidationAlerts({ result, onDismiss, onRetry }: Validat
           <Icons.CheckCircle />
         </div>
         <h3 className="text-3xl font-black text-emerald-900 tracking-tight mb-2">¡Validación Exitosa!</h3>
-        <p className="text-emerald-700/80 font-medium mb-8">El archivo <strong className="text-emerald-900">{result.fileName}</strong> cumple con todos los requisitos estructurales para el anexo {result.detectedType}.</p>
+        <p className="text-emerald-700/80 font-medium mb-8">
+          El archivo <strong className="text-emerald-900">{result.fileName}</strong> cumple con todos los requisitos estructurales para el anexo {result.detectedType}.
+        </p>
         
+        {processingError && (
+          <div className="w-full max-w-lg mb-8 p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-start gap-4 text-left">
+            <div className="text-rose-500 mt-1"><Icons.XCircle /></div>
+            <div>
+              <h4 className="text-rose-900 font-bold text-sm">Error al procesar la carga</h4>
+              <p className="text-rose-700 text-sm mt-1">{processingError}</p>
+            </div>
+          </div>
+        )}
+
         <div className="flex gap-8 mb-10">
           <div className="text-center">
             <p className="text-[10px] font-black text-emerald-600/70 uppercase tracking-widest mb-1">Registros</p>
@@ -47,12 +67,29 @@ export default function ValidationAlerts({ result, onDismiss, onRetry }: Validat
           </div>
         </div>
 
-        <button 
-          onClick={onDismiss}
-          className="bg-emerald-600 text-white px-8 py-4 rounded-xl text-xs font-black uppercase tracking-widest shadow-lg shadow-emerald-600/20 hover:bg-emerald-700 transition-all"
-        >
-          Procesar Archivo
-        </button>
+        <div className="flex gap-4">
+          <button 
+            onClick={onRetry}
+            disabled={isProcessing}
+            className="px-8 py-4 rounded-xl text-xs font-black uppercase tracking-widest text-emerald-700 hover:bg-emerald-100 transition-all disabled:opacity-50"
+          >
+            Elegir otro
+          </button>
+          <button 
+            onClick={onDismiss}
+            disabled={isProcessing}
+            className="bg-emerald-600 text-white px-8 py-4 rounded-xl text-xs font-black uppercase tracking-widest shadow-lg shadow-emerald-600/20 hover:bg-emerald-700 transition-all flex items-center gap-3 disabled:opacity-70"
+          >
+            {isProcessing ? (
+              <>
+                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                Procesando...
+              </>
+            ) : (
+              'Procesar Archivo'
+            )}
+          </button>
+        </div>
       </div>
     );
   }
@@ -75,7 +112,8 @@ export default function ValidationAlerts({ result, onDismiss, onRetry }: Validat
         </div>
         <button 
           onClick={onRetry}
-          className="bg-white border border-red-200 text-red-700 px-6 py-3 rounded-xl text-xs font-black uppercase tracking-widest flex items-center gap-3 hover:bg-red-50 transition-colors"
+          disabled={isProcessing}
+          className="bg-white border border-red-200 text-red-700 px-6 py-3 rounded-xl text-xs font-black uppercase tracking-widest flex items-center gap-3 hover:bg-red-50 transition-colors disabled:opacity-50"
         >
           <Icons.Refresh />
           Reintentar
@@ -100,10 +138,10 @@ export default function ValidationAlerts({ result, onDismiss, onRetry }: Validat
         </div>
 
         {/* Lista de Errores */}
-        <div className="space-y-4">
+        <div className="space-y-4 max-h-[40vh] overflow-y-auto pr-2 custom-scrollbar">
           {criticalErrors.map((err, i) => (
             <div key={i} className="flex gap-4 p-4 rounded-xl bg-red-50 border border-red-200 text-red-800">
-              <Icons.XCircle />
+              <div className="shrink-0"><Icons.XCircle /></div>
               <div>
                 <p className="text-sm font-bold">{err.message}</p>
               </div>
@@ -112,7 +150,7 @@ export default function ValidationAlerts({ result, onDismiss, onRetry }: Validat
 
           {structuralErrors.map((err, i) => (
             <div key={i} className="flex gap-4 p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-800">
-              <Icons.AlertTriangle />
+              <div className="shrink-0"><Icons.AlertTriangle /></div>
               <div>
                 <p className="text-sm font-bold">{err.message}</p>
               </div>
@@ -121,7 +159,7 @@ export default function ValidationAlerts({ result, onDismiss, onRetry }: Validat
 
           {rowErrors.map((err, i) => (
             <div key={i} className="flex gap-4 p-4 rounded-xl bg-yellow-50 border border-yellow-200 text-yellow-800">
-              <div className="mt-0.5"><Icons.AlertTriangle /></div>
+              <div className="shrink-0 mt-0.5"><Icons.AlertTriangle /></div>
               <div>
                 <p className="text-sm font-bold">{err.message}</p>
                 {err.line && <p className="text-[10px] font-black uppercase tracking-widest opacity-60 mt-1">Línea {err.line}</p>}

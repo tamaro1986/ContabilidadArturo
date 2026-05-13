@@ -149,11 +149,13 @@ def get_me(
     # por lo que el RLS aplicará aquí
     try:
         profile_res = supabase.table("user_profiles").select("*").eq("id", current_user.id).single().execute()
+        profile = profile_res.data
         return {
             "id": current_user.id,
             "email": current_user.email,
-            "role": profile_res.data.get("role"),
-            "tenant_id": profile_res.data.get("tenant_id")
+            "full_name": profile.get("full_name"),
+            "role": profile.get("role"),
+            "tenant_id": profile.get("tenant_id")
         }
     except Exception as e:
         raise HTTPException(

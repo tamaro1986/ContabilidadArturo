@@ -6,7 +6,7 @@ from app.services.supabase_client import get_supabase_client
 from app.core.config import settings
 
 class UserRole(str, Enum):
-    ADMIN = "admin"
+    ADMIN = "administrador"
     CONTADOR = "contador"
     VIEWER = "viewer"
     OWNER = "owner"
@@ -29,7 +29,7 @@ class RoleChecker:
     ):
         mock_tenant_id = get_tenant_from_request(request)
         if mock_tenant_id:
-            return {"user": None, "tenant_id": mock_tenant_id, "role": "admin"}
+            return {"user": None, "tenant_id": mock_tenant_id, "role": "administrador"}
             
         # Peticion a la base de datos para obtener el perfil del usuario activo
         # Manualmente llamamos a get_current_user o extraemos el token

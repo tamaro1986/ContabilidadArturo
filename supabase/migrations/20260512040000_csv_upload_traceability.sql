@@ -16,6 +16,9 @@ ALTER TABLE public.tax_documents
     ADD COLUMN IF NOT EXISTS uploaded_by UUID REFERENCES auth.users(id);
 
 -- 3. Convert existing status column to enum if it's text
+-- Drop default first to avoid casting issues
+ALTER TABLE public.tax_documents ALTER COLUMN status DROP DEFAULT;
+
 -- We handle the case where status might be 'processed' (from existing code) and map it to 'success'
 ALTER TABLE public.tax_documents 
     ALTER COLUMN status TYPE public.csv_upload_status 
@@ -30,7 +33,7 @@ ALTER TABLE public.tax_documents
     );
 
 -- 4. Set default value for status
-ALTER TABLE public.tax_documents ALTER COLUMN status SET DEFAULT 'pending';
+ALTER TABLE public.tax_documents ALTER COLUMN status SET DEFAULT 'pending'::public.csv_upload_status;
 
 -- 5. Add index for performance on dashboard queries
 CREATE INDEX IF NOT EXISTS idx_tax_docs_tenant_created ON public.tax_documents(tenant_id, created_at DESC);

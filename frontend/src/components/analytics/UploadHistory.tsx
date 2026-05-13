@@ -15,17 +15,17 @@ interface UploadRecord {
   user_profiles?: { full_name: string };
 }
 
-interface UploadHistoryTableProps {
+interface UploadHistoryProps {
   companyId?: string;
   refreshTrigger?: number;
   onUploadSuccess?: () => void;
 }
 
-export default function UploadHistoryTable({ 
+export default function UploadHistory({ 
   companyId, 
   refreshTrigger, 
   onUploadSuccess 
-}: UploadHistoryTableProps) {
+}: UploadHistoryProps) {
   const [history, setHistory] = useState<UploadRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isPolling, setIsPolling] = useState(false);
@@ -42,24 +42,24 @@ export default function UploadHistoryTable({
       if (queryString) url += `?${queryString}`;
 
       const { data: { session } } = await supabase.auth.getSession();
+      
       if (!session) {
-        console.warn("No active session found for upload history");
+        console.warn('No session found for fetchHistory');
+        setIsLoading(false);
         return;
       }
-      
+
       const res = await fetch(url, {
         headers: {
-          'Authorization': `Bearer ${session.access_token}`
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json'
         }
       });
       
       if (!res.ok) {
-        if (res.status === 401) {
-          console.error("Unauthorized call to upload history");
-        }
-        throw new Error(`API Error ${res.status}`);
+        throw new Error(`History API error: ${res.status}`);
       }
-
+      
       const data = await res.json();
       if (data.status === 'success') {
         const newHistory = data.data;
@@ -89,7 +89,7 @@ export default function UploadHistoryTable({
 
   useEffect(() => {
     fetchHistory();
-  }, [companyId, refreshTrigger]);
+  }, [companyId, refreshTrigger, fetchHistory]);
 
   useEffect(() => {
     let intervalId: NodeJS.Timeout;

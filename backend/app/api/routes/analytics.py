@@ -581,7 +581,7 @@ def get_ventas_annex(
             nit_dui as numero, -- En consumidor final nit_dui guarda el rango
             nit_dui,
             customer_name as nombre,
-            0.0 as exento, -- Por ahora 0, se puede expandir el seeder luego
+            COALESCE(exento_amount, 0.0) as exento,
             amount as gravado,
             iva_amount as iva,
             (amount + iva_amount) as total
@@ -625,7 +625,7 @@ def get_compras_annex(
             document_type as tipo_doc,
             nit_dui,
             customer_name as nombre,
-            0.0 as exento,
+            COALESCE(exento_amount, 0.0) as exento,
             amount as gravado,
             iva_amount as iva,
             (amount + iva_amount) as total
@@ -670,7 +670,7 @@ def get_payroll_annex(
             nit_dui as numero,
             nit_dui,
             customer_name as nombre,
-            0.0 as exento,
+            COALESCE(exento_amount, 0.0) as exento,
             amount as gravado, -- Salario Bruto
             afp_amount as afp,
             isss_amount as isss,
@@ -690,3 +690,177 @@ def get_payroll_annex(
         return {"status": "success", "data": data}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error en anexo de nómina: {str(e)}")
+
+@router.get("/supplier-rfm")
+@cache_response(expire=3600)
+def get_supplier_rfm_analysis(
+    user_data: dict = Depends(require_cliente),
+    duck_con = Depends(get_duckdb_client)
+):
+    tenant_id = user_data.get("tenant_id")
+    if not tenant_id:
+        raise HTTPException(status_code=400, detail="Tenant ID no encontrado")
+
+    query = """
+        WITH rfm_base AS (
+            SELECT 
+                nit_dui as supplier_id,
+                MAX(customer_name) as supplier_name,
+                MAX(transaction_date) as last_purchase_date,
+                COUNT(id) as frequency,
+                SUM(amount) as monetary
+            FROM pg.financial_records
+            WHERE tenant_id = ? AND status = 'Valido'
+              AND transaction_type = 'Compras'
+            GROUP BY nit_dui
+        ),
+        rfm_scores AS (
+            SELECT 
+                supplier_id,
+                supplier_name,
+                last_purchase_date,
+                frequency,
+                monetary,
+                NTILE(5) OVER (ORDER BY last_purchase_date ASC) AS r_score,
+                NTILE(5) OVER (ORDER BY frequency ASC) AS f_score,
+                NTILE(5) OVER (ORDER BY monetary ASC) AS m_score
+            FROM rfm_base
+        )
+        SELECT 
+            supplier_id,
+            supplier_name,
+            CAST(last_purchase_date AS VARCHAR) as last_purchase,
+            frequency,
+            monetary,
+            CASE 
+                WHEN r_score >= 4 AND f_score >= 4 AND m_score >= 4 THEN 'estrella'
+                WHEN r_score <= 2 THEN 'atencion'
+                WHEN r_score >= 4 AND f_score <= 2 THEN 'prometedores'
+                WHEN r_score >= 3 AND f_score >= 3 THEN 'habituales'
+                ELSE 'desarrollo'
+            END AS segment_key
+        FROM rfm_scores
+        ORDER BY monetary DESC;
+    """
+
+    try:
+        results = duck_con.execute(query, [tenant_id]).fetchall()
+        columns = [desc[0] for desc in duck_con.description]
+        
+        raw_data = [dict(zip(columns, row)) for row in results]
+        
+        final_data = []
+        summary_counts = {}
+        
+        for item in raw_data:
+            key = item.pop("segment_key")
+            # We can use the same mapping for suppliers or a custom one. 
+            # For now, let's reuse SEGMENT_MAPPING but with supplier-focused insights if needed.
+            mapping = SEGMENT_MAPPING.get(key, SEGMENT_MAPPING["desarrollo"])
+            
+            item["etiqueta"] = mapping["label"]
+            item["color"] = mapping["color"]
+            item["narrativa"] = mapping["insight"].replace("Cliente", "Proveedor").replace("compra", "venta")
+            
+            final_data.append(item)
+            
+            label = mapping["label"]
+            summary_counts[label] = summary_counts.get(label, 0) + 1
+
+        return {
+            "status": "success",
+            "data": final_data,
+            "summary": [{"name": k, "value": v} for k, v in summary_counts.items()]
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error en análisis de proveedores: {str(e)}")
+
+@router.get("/monthly-suppliers")
+@cache_response(expire=600)
+def get_monthly_suppliers(
+    user_data: dict = Depends(require_cliente),
+    duck_con = Depends(get_duckdb_client)
+):
+    tenant_id = user_data.get("tenant_id")
+    if not tenant_id:
+        raise HTTPException(status_code=400, detail="Tenant ID no encontrado")
+
+    query = """
+        WITH latest_month AS (
+            SELECT MAX(date_trunc('month', transaction_date)) as max_month
+            FROM pg.financial_records
+            WHERE tenant_id = ? AND status = 'Valido'
+              AND transaction_type = 'Compras'
+        ),
+        monthly_purchases AS (
+            SELECT 
+                nit_dui as supplier_id,
+                MAX(customer_name) as supplier_name,
+                SUM(amount) as monto_mes
+            FROM pg.financial_records
+            WHERE tenant_id = ? AND status = 'Valido'
+              AND transaction_type = 'Compras'
+              AND date_trunc('month', transaction_date) = (SELECT max_month FROM latest_month)
+            GROUP BY nit_dui
+        ),
+        rfm_base AS (
+            SELECT 
+                nit_dui as supplier_id,
+                MAX(transaction_date) as last_purchase_date,
+                COUNT(id) as frequency,
+                SUM(amount) as total_monetary
+            FROM pg.financial_records
+            WHERE tenant_id = ? AND status = 'Valido'
+              AND transaction_type = 'Compras'
+            GROUP BY nit_dui
+        ),
+        rfm_scores AS (
+            SELECT 
+                supplier_id,
+                NTILE(5) OVER (ORDER BY last_purchase_date ASC) AS r_score,
+                NTILE(5) OVER (ORDER BY frequency ASC) AS f_score,
+                NTILE(5) OVER (ORDER BY total_monetary ASC) AS m_score
+            FROM rfm_base
+        )
+        SELECT 
+            mp.supplier_id,
+            mp.supplier_name,
+            mp.monto_mes,
+            CASE 
+                WHEN rs.r_score >= 4 AND rs.f_score >= 4 AND rs.m_score >= 4 THEN 'estrella'
+                WHEN rs.r_score <= 2 THEN 'atencion'
+                WHEN rs.r_score >= 4 AND rs.f_score <= 2 THEN 'prometedores'
+                WHEN rs.r_score >= 3 AND rs.f_score >= 3 THEN 'habituales'
+                ELSE 'desarrollo'
+            END AS segment_key
+        FROM monthly_purchases mp
+        LEFT JOIN rfm_scores rs ON mp.supplier_id = rs.supplier_id
+        ORDER BY mp.monto_mes DESC
+        LIMIT 20;
+    """
+
+    try:
+        results = duck_con.execute(query, [tenant_id, tenant_id, tenant_id]).fetchall()
+        columns = [desc[0] for desc in duck_con.description]
+        
+        data = []
+        for row in results:
+            item = dict(zip(columns, row))
+            key = item.pop("segment_key")
+            mapping = SEGMENT_MAPPING.get(key, SEGMENT_MAPPING["desarrollo"])
+            
+            item["etiqueta"] = mapping["label"]
+            item["color"] = mapping["color"]
+            item["narrativa"] = mapping["insight"].replace("Cliente", "Proveedor").replace("compra", "venta")
+            data.append(item)
+
+        month_res = duck_con.execute("SELECT MAX(date_trunc('month', transaction_date)) FROM pg.financial_records WHERE tenant_id = ? AND status = 'Valido' AND transaction_type = 'Compras'", [tenant_id]).fetchone()
+        periodo = str(month_res[0])[:7] if month_res and month_res[0] else "Actual"
+
+        return {
+            "status": "success",
+            "periodo": periodo,
+            "data": data
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error en proveedores mensuales: {str(e)}")

@@ -80,107 +80,137 @@ export default function SmartCsvUploader({ company, onValidationComplete, onBack
 
     const reader = new FileReader();
     reader.onload = (e) => {
-      const text = e.target?.result as string;
-      const lines = text.split('\n').filter(line => line.trim() !== '');
-      
-      const errors: ValidationError[] = [];
-      const warnings: ValidationWarning[] = [];
-
-      if (lines.length > 0) {
-        const separator = lines[0].includes(';') ? ';' : ',';
-        const headers = lines[0].split(separator);
-        const expectedCols = annexTypes.find(t => t.id === selectedType)?.cols || 0;
-        
-        if (headers.length !== expectedCols) {
-          const suggestedType = annexTypes.find(t => t.cols === headers.length);
-          let extraMsg = '';
-          if (suggestedType) {
-            extraMsg = ` ¿Quisiste decir "${suggestedType.label}"?`;
-          }
-          
-          errors.push({
-            code: 'COLUMNS_MISMATCH',
-            severity: 'structural',
-            message: `Error Estructural: El archivo tiene ${headers.length} columnas, pero el tipo seleccionado "${selectedType}" requiere ${expectedCols}.${extraMsg}`
-          });
+      try {
+        const text = e.target?.result as string;
+        if (!text) {
+          throw new Error("El archivo está vacío o no pudo leerse.");
         }
+        
+        const lines = text.split('\n').filter(line => line.trim() !== '');
+        
+        const errors: ValidationError[] = [];
+        const warnings: ValidationWarning[] = [];
 
-        // Mock Row-level validation on lines 1-10
-        for (let i = 1; i < Math.min(lines.length, 10); i++) {
-          const cols = lines[i].split(separator);
+        if (lines.length > 0) {
+          const separator = lines[0].includes(';') ? ';' : ',';
+          const headers = lines[0].split(separator);
+          const expectedCols = annexTypes.find(t => t.id === selectedType)?.cols || 0;
           
-          // El formato de Hacienda para estos anexos usualmente tiene la fecha en la columna 7 (index 6)
-          // NIT_RECEPTOR,NRC_RECEPTOR,ANIO,MES,TIPO_DOC,NUM_DOC,FECHA_EMISION...
-          const dateColIndex = 6; 
-          
-          if (cols.length > dateColIndex) {
-            const dateValue = cols[dateColIndex].trim();
-            const dateRegex = /^\d{2}\/\d{2}\/\d{4}$/;
-            
-            if (dateValue !== '' && !dateRegex.test(dateValue)) {
-              errors.push({
-                code: 'INVALID_DATE_FORMAT',
-                severity: 'row-level',
-                message: `Línea ${i + 1}: El formato de fecha en la columna ${dateColIndex + 1} debe ser DD/MM/AAAA.`,
-                line: i + 1,
-                column: (dateColIndex + 1).toString()
-              });
+          if (headers.length !== expectedCols) {
+            const suggestedType = annexTypes.find(t => t.cols === headers.length);
+            let extraMsg = '';
+            if (suggestedType) {
+              extraMsg = ` ¿Quisiste decir "${suggestedType.label}"?`;
             }
-          }
-          
-          // Validación de Identificación (NIT o DUI)
-          // Ventas Contribuyente: NIT en col 8 (index 7)
-          // Compras: NIT en col 8 (index 7)
-          // Ventas Consumidor: DUI en col 9 (index 8)
-          const isConsumidor = selectedType === 'ventas-consumidor';
-          const idColIndex = isConsumidor ? 8 : 7;
-          
-          if (cols.length > idColIndex) {
-            const idRaw = cols[idColIndex].trim();
-            const idClean = idRaw.replace(/\D/g, '');
             
-            if (idRaw !== '') {
-              if (isConsumidor) {
-                // Validación DUI (9 dígitos)
-                if (idClean.length !== 9) {
-                  errors.push({
-                    code: 'INVALID_DUI',
-                    severity: 'row-level',
-                    message: `Línea ${i + 1}: El DUI "${idRaw}" no es válido. Se esperan 9 dígitos.`,
-                    line: i + 1,
-                    column: (idColIndex + 1).toString()
-                  });
-                }
-              } else {
-                // Validación NIT (14 dígitos)
-                if (idClean.length !== 14) {
-                  errors.push({
-                    code: 'INVALID_NIT',
-                    severity: 'row-level',
-                    message: `Línea ${i + 1}: El NIT "${idRaw}" no es válido. Se esperan 14 dígitos.`,
-                    line: i + 1,
-                    column: (idColIndex + 1).toString()
-                  });
+            errors.push({
+              code: 'COLUMNS_MISMATCH',
+              severity: 'structural',
+              message: `Error Estructural: El archivo tiene ${headers.length} columnas, pero el tipo seleccionado "${selectedType}" requiere ${expectedCols}.${extraMsg}`
+            });
+          }
+
+          // Mock Row-level validation on lines 1-10
+          for (let i = 1; i < Math.min(lines.length, 10); i++) {
+            const cols = lines[i].split(separator);
+            
+            // El formato de Hacienda para estos anexos usualmente tiene la fecha en la columna 7 (index 6)
+            // NIT_RECEPTOR,NRC_RECEPTOR,ANIO,MES,TIPO_DOC,NUM_DOC,FECHA_EMISION...
+            const dateColIndex = 6; 
+            
+            if (cols.length > dateColIndex) {
+              const dateValue = cols[dateColIndex].trim();
+              const dateRegex = /^\d{2}\/\d{2}\/\d{4}$/;
+              
+              if (dateValue !== '' && !dateRegex.test(dateValue)) {
+                errors.push({
+                  code: 'INVALID_DATE_FORMAT',
+                  severity: 'row-level',
+                  message: `Línea ${i + 1}: El formato de fecha en la columna ${dateColIndex + 1} debe ser DD/MM/AAAA.`,
+                  line: i + 1,
+                  column: (dateColIndex + 1).toString()
+                });
+              }
+            }
+            
+            // Validación de Identificación (NIT o DUI)
+            // Ventas Contribuyente: NIT en col 8 (index 7)
+            // Compras: NIT en col 8 (index 7)
+            // Ventas Consumidor: DUI en col 9 (index 8)
+            const isConsumidor = selectedType === 'ventas-consumidor';
+            const idColIndex = isConsumidor ? 8 : 7;
+            
+            if (cols.length > idColIndex) {
+              const idRaw = cols[idColIndex].trim();
+              const idClean = idRaw.replace(/\D/g, '');
+              
+              if (idRaw !== '') {
+                if (isConsumidor) {
+                  // Validación DUI (9 dígitos)
+                  if (idClean.length !== 9) {
+                    errors.push({
+                      code: 'INVALID_DUI',
+                      severity: 'row-level',
+                      message: `Línea ${i + 1}: El DUI "${idRaw}" no es válido. Se esperan 9 dígitos.`,
+                      line: i + 1,
+                      column: (idColIndex + 1).toString()
+                    });
+                  }
+                } else {
+                  // Validación NIT (14 dígitos)
+                  if (idClean.length !== 14) {
+                    errors.push({
+                      code: 'INVALID_NIT',
+                      severity: 'row-level',
+                      message: `Línea ${i + 1}: El NIT "${idRaw}" no es válido. Se esperan 14 dígitos.`,
+                      line: i + 1,
+                      column: (idColIndex + 1).toString()
+                    });
+                  }
                 }
               }
             }
           }
         }
-      }
 
-      setTimeout(() => {
+        setTimeout(() => {
+          setIsProcessing(false);
+          onValidationComplete({
+            isValid: errors.length === 0,
+            fileName: file.name,
+            fileSize: file.size,
+            errors,
+            warnings,
+            rowCount: lines.length > 0 ? lines.length - 1 : 0,
+            detectedType: selectedType,
+            file: file
+          });
+        }, 1500); // Mock processing delay
+        
+      } catch (err: any) {
+        console.error("Error validando el CSV:", err);
         setIsProcessing(false);
         onValidationComplete({
-          isValid: errors.length === 0,
+          isValid: false,
           fileName: file.name,
           fileSize: file.size,
-          errors,
-          warnings,
-          rowCount: lines.length - 1,
-          detectedType: selectedType
+          errors: [{ code: 'PARSE_ERROR', severity: 'critical', message: `Error al procesar el archivo: ${err.message}` }],
+          warnings: []
         });
-      }, 1500); // Mock processing delay
+      }
     };
+    
+    reader.onerror = () => {
+      setIsProcessing(false);
+      onValidationComplete({
+        isValid: false,
+        fileName: file.name,
+        fileSize: file.size,
+        errors: [{ code: 'READ_ERROR', severity: 'critical', message: 'No se pudo leer el archivo físico.' }],
+        warnings: []
+      });
+    };
+    
     reader.readAsText(file);
   };
 

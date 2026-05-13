@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     SUPABASE_SERVICE_ROLE_KEY: str = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
     DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/postgres")
     REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-    MOCK_MODE: bool = True
+    MOCK_MODE: bool = os.getenv("MOCK_MODE", "False").lower() == "true"
     
     # Security
     CORS_ORIGINS: list[str] = [
@@ -20,7 +20,9 @@ class Settings(BaseSettings):
         "http://localhost:8000"
     ]
     if os.getenv("CORS_ORIGINS"):
-        CORS_ORIGINS = os.getenv("CORS_ORIGINS", "").split(",")
+        # Permite sobrescribir desde el entorno, útil en producción
+        env_origins = os.getenv("CORS_ORIGINS", "").split(",")
+        CORS_ORIGINS = [o.strip() for o in env_origins if o.strip()]
 
     # Regex para permitir cualquier subdominio de Vercel (útil para PR previews)
     CORS_ORIGIN_REGEX: str = r"https://contabilidad-arturo.*\.vercel\.app"

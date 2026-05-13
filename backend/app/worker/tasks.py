@@ -74,12 +74,14 @@ def _process_hacienda_row(row: dict, filename: str, tenant_id: str, company_id: 
         if "CONTRIBUYENTES" in filename.upper():
             amount = _parse_decimal(row.get("VENTAS GRAVADAS LOCALES", "0"))
             iva = _parse_decimal(row.get("DEBITO FISCAL", "0"))
+            exento_key = next((k for k in row if "EXENTA" in k.upper()), "")
+            exento = _parse_decimal(row.get(exento_key, "0")) if exento_key else 0.0
             nit = row.get("NIT O NRC DEL CLIENTE", "").strip() or "DESCONOCIDO"
             name = next((v for k, v in row.items() if "NOMBRE" in k.upper()), "DESCONOCIDO")
             fecha_raw = next((v for k, v in row.items() if "FECHA" in k.upper()), "")
             record = {
                 "tenant_id": tenant_id, "company_id": company_id, "client_id": nit, "customer_name": name,
-                "amount": amount, "iva_amount": iva, "transaction_date": _parse_date(fecha_raw).isoformat(),
+                "amount": amount, "iva_amount": iva, "exento_amount": exento, "transaction_date": _parse_date(fecha_raw).isoformat(),
                 "transaction_type": "Ventas Contribuyente", "nit_dui": nit,
                 "document_type": _norm_tipo_doc(row.get("TIPO DE DOCUMENTO", "03")),
                 "clase_de_documento": _norm_clase_doc(row.get("CLASE DE DOCUMENTO", "1"))
@@ -87,17 +89,21 @@ def _process_hacienda_row(row: dict, filename: str, tenant_id: str, company_id: 
         
         elif "CONSUMIDOR_FINAL" in filename.upper():
             amount = _parse_decimal(row.get("VENTAS GRAVADAS LOCALES", "0"))
+            exento_key = next((k for k in row if "EXENTA" in k.upper()), "")
+            exento = _parse_decimal(row.get(exento_key, "0")) if exento_key else 0.0
             fecha_raw = next((v for k, v in row.items() if "FECHA" in k.upper()), "")
             doc_desde = row.get("N\u00daMERO DE DOCUMENTO (DEL)", row.get("NUMERO DE DOCUMENTO (DEL)", ""))
             record = {
                 "tenant_id": tenant_id, "company_id": company_id, "client_id": "CONSUMIDOR_FINAL", "customer_name": "CONSUMIDOR FINAL",
-                "amount": amount, "iva_amount": round(amount * IVA_RATE, 2), "transaction_date": _parse_date(fecha_raw).isoformat(),
+                "amount": amount, "iva_amount": round(amount * IVA_RATE, 2), "exento_amount": exento, "transaction_date": _parse_date(fecha_raw).isoformat(),
                 "transaction_type": "Ventas Consumidor", "nit_dui": doc_desde.strip(),
                 "document_type": _norm_tipo_doc(row.get("TIPO DE DOCUMENTO", "01"))
             }
 
         elif "COMPRAS" in filename.upper():
             amount = _parse_decimal(row.get("COMPRAS INTERNAS GRAVADAS", "0"))
+            exento_key = next((k for k in row if "EXENTA" in k.upper()), "")
+            exento = _parse_decimal(row.get(exento_key, "0")) if exento_key else 0.0
             iva_key = next((k for k in row if "DITO" in k.upper() and "FISC" in k.upper()), "")
             iva = _parse_decimal(row.get(iva_key, "0"))
             nit = row.get("NIT O NRC DEL PROVEEDOR", "").strip() or "DESCONOCIDO"
@@ -105,7 +111,7 @@ def _process_hacienda_row(row: dict, filename: str, tenant_id: str, company_id: 
             fecha_raw = next((v for k, v in row.items() if "FECHA" in k.upper()), "")
             record = {
                 "tenant_id": tenant_id, "company_id": company_id, "client_id": nit, "customer_name": name,
-                "amount": amount, "iva_amount": iva, "transaction_date": _parse_date(fecha_raw).isoformat(),
+                "amount": amount, "iva_amount": iva, "exento_amount": exento, "transaction_date": _parse_date(fecha_raw).isoformat(),
                 "transaction_type": "Compras", "nit_dui": nit,
                 "document_type": _norm_tipo_doc(row.get("TIPO DE DOCUMENTO", "03"))
             }
@@ -119,6 +125,7 @@ def _process_hacienda_row(row: dict, filename: str, tenant_id: str, company_id: 
                     "company_id": company_id,
                     "client_id": str(vals[0]),
                     "amount": _parse_decimal(str(vals[1])),
+                    "exento_amount": 0.0,
                     "transaction_date": _parse_date(str(vals[2])).isoformat(),
                     "transaction_type": "Otros"
                 }
@@ -126,14 +133,16 @@ def _process_hacienda_row(row: dict, filename: str, tenant_id: str, company_id: 
         if record:
             record["status"] = "Valido"
             return record
+        else:
+            raise ValueError(f"Formato no reconocido en el archivo {filename}")
 
     except Exception as e:
         logger.error(f"Error procesando fila en {filename}: {e}")
-    return None
+        raise ValueError(f"Fallo en validaciones fiscales o formato: {str(e)}")
 
 # --- Tarea Principal ---
 
-def process_financial_csv(bucket_name: str, file_path: str, tenant_id: str, company_id: str, upload_id: str = None):
+def process_financial_csv(bucket_name: str, file_path: str, tenant_id: str, company_id: str, upload_id: str = None, tax_doc_id: str = None):
     supabase = get_supabase_admin_client()
     
     def update_status(status: str, rows: int = 0, error: str = None):
@@ -141,6 +150,9 @@ def process_financial_csv(bucket_name: str, file_path: str, tenant_id: str, comp
             data = {"status": status, "records_processed": rows}
             if error: data["error_message"] = error[:250]
             supabase.table("csv_upload_history").update(data).eq("id", upload_id).execute()
+        if tax_doc_id:
+            tax_status = "success" if status == "success" else ("error" if status == "error" else "pending")
+            supabase.table("tax_documents").update({"status": tax_status}).eq("id", tax_doc_id).execute()
 
     try:
         update_status("processing")

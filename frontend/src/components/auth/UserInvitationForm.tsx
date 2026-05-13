@@ -20,12 +20,17 @@ export default function UserInvitationForm({ token }: UserInvitationFormProps) {
         setMessage(null);
 
         try {
+            const { data: { session } } = await supabase.auth.getSession();
+            const currentToken = session?.access_token || token;
+
+            if (!currentToken) throw new Error("Sesión expirada. Por favor recargue la página.");
+
             const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
             const response = await fetch(`${API_URL}/auth/invite`, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
-                    "Authorization": `Bearer ${token}`
+                    "Authorization": `Bearer ${currentToken}`
                 },
                 body: JSON.stringify({
                     email,

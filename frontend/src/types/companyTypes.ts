@@ -44,7 +44,8 @@ export interface CsvValidationResult {
   errors: ValidationError[];
   warnings: ValidationWarning[];
   rowCount?: number;
-  detectedType?: string;
+  detectedType?: AnnexUploadType;
+  file?: File;
 }
 
 export interface ValidationError {
