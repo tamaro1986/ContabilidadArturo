@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import { fetchWithAuth } from "@/lib/api";
 
 interface UserInvitationFormProps {
     token: string;
@@ -20,18 +21,8 @@ export default function UserInvitationForm({ token }: UserInvitationFormProps) {
         setMessage(null);
 
         try {
-            const { data: { session } } = await supabase.auth.getSession();
-            const currentToken = session?.access_token || token;
-
-            if (!currentToken) throw new Error("Sesión expirada. Por favor recargue la página.");
-
-            const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
-            const response = await fetch(`${API_URL}/auth/invite`, {
+            const response = await fetchWithAuth("/auth/invite", {
                 method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    "Authorization": `Bearer ${currentToken}`
-                },
                 body: JSON.stringify({
                     email,
                     full_name: fullName,

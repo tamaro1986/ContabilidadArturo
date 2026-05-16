@@ -15,12 +15,15 @@ app = FastAPI(
 # ── CORS Configuration ────────────────────────────────────────────────────────
 # IMPORTANTE: Si allow_credentials=True, allow_origins NO puede ser ["*"]
 # Usamos la lista de orígenes definida en settings.py
+# Limpia los orígenes para asegurar que no tengan barras al final
+clean_origins = [str(origin).rstrip("/") for origin in settings.CORS_ORIGINS]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS,
+    allow_origins=clean_origins, # Usamos la lista limpia
     allow_origin_regex=settings.CORS_ORIGIN_REGEX,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+    allow_methods=["*"], # En desarrollo, permite todos para probar
     allow_headers=["*"],
     expose_headers=["*"],
 )

@@ -29,3 +29,9 @@ class UserInvite(BaseModel):
     email: EmailStr
     full_name: str
     role: str = "cliente"
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+class ResetPasswordRequest(BaseModel):
+    password: str

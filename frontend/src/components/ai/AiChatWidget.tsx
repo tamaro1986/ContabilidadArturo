@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import { fetchWithAuth } from "@/lib/api";
 
 interface Message {
   role: "user" | "assistant";
@@ -10,11 +11,9 @@ interface Message {
 }
 
 interface AiChatWidgetProps {
-  token?: string; // Made optional as we fetch it fresh
-  apiUrl: string;
 }
 
-export default function AiChatWidget({ token, apiUrl }: AiChatWidgetProps) {
+export default function AiChatWidget({ }: AiChatWidgetProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -46,22 +45,8 @@ export default function AiChatWidget({ token, apiUrl }: AiChatWidgetProps) {
     setIsLoading(true);
 
     try {
-      const headers: Record<string, string> = {
-        "Content-Type": "application/json",
-      };
-
-      const { data: { session } } = await supabase.auth.getSession();
-      const currentToken = session?.access_token;
-
-      if (currentToken) {
-        // Soporte para MOCK_MODE y Producción
-        headers["Authorization"] = `Bearer ${currentToken}`;
-        headers["X-Mock-Tenant-ID"] = currentToken;
-      }
-
-      const response = await fetch(`${apiUrl}/ai/chat`, {
+      const response = await fetchWithAuth("/ai/chat", {
         method: "POST",
-        headers,
         body: JSON.stringify({ message: userMessage }),
       });
 

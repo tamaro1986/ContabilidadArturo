@@ -106,7 +106,13 @@ function LoginContent() {
             <div className="space-y-1.5">
               <div className="flex justify-between items-center px-1">
                 <label className="text-[10px] font-black text-on-surface-variant uppercase tracking-widest">Código de Seguridad</label>
-                <a href="#" className="text-secondary text-[9px] font-black uppercase tracking-wider hover:underline">¿Olvido su clave?</a>
+                <button 
+                  type="button"
+                  onClick={() => router.push('/forgot-password')}
+                  className="text-secondary text-[9px] font-black uppercase tracking-wider hover:underline"
+                >
+                  ¿Olvido su clave?
+                </button>
               </div>
               <div className="relative group">
                 <div className="absolute left-4 top-1/2 -translate-y-1/2 text-outline group-focus-within:text-primary transition-colors">

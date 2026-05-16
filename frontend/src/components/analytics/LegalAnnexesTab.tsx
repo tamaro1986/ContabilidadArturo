@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { supabase } from "@/lib/supabaseClient";
+import { fetchWithAuth } from "@/lib/api";
 import { AnnexRecord, AnnexType } from "@/types/analytics";
 
 // ── Inline SVG Icons ───────────────────────────────────────────────────────────
@@ -76,23 +76,15 @@ export default function LegalAnnexesTab() {
         const fetchAnnexData = async () => {
             setLoading(true); setError("");
             try {
-                let headers: HeadersInit = {};
-                const mockTenantId = localStorage.getItem("X-Mock-Tenant-ID");
-                if (mockTenantId) { headers = { "X-Mock-Tenant-ID": mockTenantId }; }
-                else {
-                    const { data: { session } } = await supabase.auth.getSession();
-                    const token = session?.access_token;
-                    if (!token) throw new Error("Sesión expirada. Por favor recargue la página.");
-                    headers = { "Authorization": `Bearer ${token}` };
-                }
-                const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
                 const endpoint = annexConfig[activeAnnex].endpoint;
-                const res = await fetch(`${API_URL}/analytics/tax-summary/annexes/${endpoint}`, { headers });
-                if (!res.ok) throw new Error(`Error: ${res.statusText}`);
+                const res = await fetchWithAuth(`/analytics/tax-summary/annexes/${endpoint}`);
+                
                 const result = await res.json();
                 let fetchedRecords: AnnexRecord[] = result.data || [];
+                
                 if (activeAnnex === '1') fetchedRecords = fetchedRecords.filter((r: AnnexRecord) => r.transaction_type === 'Ventas Contribuyente');
                 else if (activeAnnex === '2') fetchedRecords = fetchedRecords.filter((r: AnnexRecord) => r.transaction_type === 'Ventas Consumidor');
+                
                 setRecords(fetchedRecords);
             } catch (err: unknown) { 
                 console.error("Error fetching annex:", err); 

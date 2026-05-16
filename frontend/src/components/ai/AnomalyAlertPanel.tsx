@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { fetchWithAuth } from "@/lib/api";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -37,7 +38,6 @@ interface AnomalySummary {
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
 
 const fmt = (n: number) =>
   new Intl.NumberFormat("es-SV", { style: "currency", currency: "USD" }).format(n);
@@ -223,22 +223,14 @@ export function AnomalyAlertPanel({ token }: AnomalyAlertPanelProps) {
 
   const fetchData = useCallback(async (isMounted = true) => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return;
-
-      const currentHeaders = {
-        Authorization: `Bearer ${session.access_token}`,
-        "Content-Type": "application/json"
-      };
-
       if (isMounted) {
         setLoading(true);
         setError(null);
       }
 
       const [listRes, summaryRes] = await Promise.all([
-        fetch(`${API_BASE}/ai/anomalies?limit=${PAGE_SIZE}&offset=${page * PAGE_SIZE}`, { headers: currentHeaders }),
-        fetch(`${API_BASE}/ai/anomalies/summary`, { headers: currentHeaders }),
+        fetchWithAuth(`/ai/anomalies?limit=${PAGE_SIZE}&offset=${page * PAGE_SIZE}`),
+        fetchWithAuth('/ai/anomalies/summary'),
       ]);
 
       if (!listRes.ok) {
@@ -266,15 +258,7 @@ export function AnomalyAlertPanel({ token }: AnomalyAlertPanelProps) {
   const handleRefresh = async () => {
     setRefreshing(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error("No hay sesión activa");
-
-      const headers = {
-        Authorization: `Bearer ${session.access_token}`,
-        "Content-Type": "application/json"
-      };
-
-      const res = await fetch(`${API_BASE}/ai/anomalies/refresh`, { method: "POST", headers });
+      const res = await fetchWithAuth('/ai/anomalies/refresh', { method: "POST" });
       if (!res.ok) throw new Error(`Error ${res.status} al refrescar`);
       
       setPage(0);

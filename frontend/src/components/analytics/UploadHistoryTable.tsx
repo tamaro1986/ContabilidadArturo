@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState, useCallback } from 'react';
-import { supabase } from '@/lib/supabaseClient';
+import { fetchWithAuth } from "@/lib/api";
 
 interface UploadRecord {
   id: string;
@@ -33,46 +33,28 @@ export default function UploadHistoryTable({
   const fetchHistory = useCallback(async (isAutoRefresh = false) => {
     if (!isAutoRefresh) setIsLoading(true);
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
-      let url = `${apiUrl}/uploads/history`;
+      let endpoint = '/uploads/history';
       const params = new URLSearchParams();
       if (companyId) params.append('company_id', companyId);
       
       const queryString = params.toString();
-      if (queryString) url += `?${queryString}`;
+      if (queryString) endpoint += `?${queryString}`;
 
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        console.warn("No active session found for upload history");
-        return;
-      }
-      
-      const res = await fetch(url, {
-        headers: {
-          'Authorization': `Bearer ${session.access_token}`
-        }
-      });
-      
-      if (!res.ok) {
-        if (res.status === 401) {
-          console.error("Unauthorized call to upload history");
-        }
-        throw new Error(`API Error ${res.status}`);
-      }
-
+      const res = await fetchWithAuth(endpoint);
       const data = await res.json();
       if (data.status === 'success') {
         const newHistory = data.data;
         
-        // Detect transitions to success for feedback
-        const wasProcessing = history.some(r => r.status === 'processing');
-        const nowDone = !newHistory.some((r: UploadRecord) => r.status === 'processing');
-        
-        if (wasProcessing && nowDone && onUploadSuccess) {
-          onUploadSuccess();
-        }
-
-        setHistory(newHistory);
+        setHistory(prevHistory => {
+          // Detect transitions to success for feedback
+          const wasProcessing = prevHistory.some(r => r.status === 'processing');
+          const nowDone = !newHistory.some((r: UploadRecord) => r.status === 'processing');
+          
+          if (wasProcessing && nowDone && onUploadSuccess) {
+            onUploadSuccess();
+          }
+          return newHistory;
+        });
         
         // Maintain polling if something is still cooking
         const hasActiveTasks = newHistory.some((r: UploadRecord) => 
@@ -85,11 +67,14 @@ export default function UploadHistoryTable({
     } finally {
       if (!isAutoRefresh) setIsLoading(false);
     }
-  }, [companyId, history, onUploadSuccess, supabase]);
+  }, [companyId, onUploadSuccess]);
 
   useEffect(() => {
-    fetchHistory();
-  }, [companyId, refreshTrigger]);
+    const timer = setTimeout(() => {
+      fetchHistory();
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [companyId, refreshTrigger, fetchHistory]);
 
   useEffect(() => {
     let intervalId: NodeJS.Timeout;

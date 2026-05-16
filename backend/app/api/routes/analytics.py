@@ -55,7 +55,7 @@ def get_rfm_analysis(
                 MAX(transaction_date) as last_purchase_date,
                 COUNT(id) as frequency,
                 SUM(amount) as monetary
-            FROM pg.financial_records
+            FROM pg.public.financial_records
             WHERE tenant_id = ? AND status = 'Valido'
               AND transaction_type IN ('Ventas Contribuyente', 'Ventas Consumidor')
             GROUP BY client_id
@@ -138,7 +138,7 @@ def get_monthly_customers(
     query = """
         WITH latest_month AS (
             SELECT MAX(date_trunc('month', transaction_date)) as max_month
-            FROM pg.financial_records
+            FROM pg.public.financial_records
             WHERE tenant_id = ? AND status = 'Valido'
               AND transaction_type IN ('Ventas Contribuyente', 'Ventas Consumidor')
         ),
@@ -147,7 +147,7 @@ def get_monthly_customers(
                 client_id,
                 MAX(customer_name) as customer_name,
                 SUM(amount) as monto_mes
-            FROM pg.financial_records
+            FROM pg.public.financial_records
             WHERE tenant_id = ? AND status = 'Valido'
               AND transaction_type IN ('Ventas Contribuyente', 'Ventas Consumidor')
               AND date_trunc('month', transaction_date) = (SELECT max_month FROM latest_month)
@@ -159,7 +159,7 @@ def get_monthly_customers(
                 MAX(transaction_date) as last_purchase_date,
                 COUNT(id) as frequency,
                 SUM(amount) as total_monetary
-            FROM pg.financial_records
+            FROM pg.public.financial_records
             WHERE tenant_id = ? AND status = 'Valido'
               AND transaction_type IN ('Ventas Contribuyente', 'Ventas Consumidor')
             GROUP BY client_id
@@ -205,7 +205,7 @@ def get_monthly_customers(
             data.append(item)
 
         # Obtener nombre del mes para la respuesta
-        month_res = duck_con.execute("SELECT MAX(date_trunc('month', transaction_date)) FROM pg.financial_records WHERE tenant_id = ? AND status = 'Valido'", [tenant_id]).fetchone()
+        month_res = duck_con.execute("SELECT MAX(date_trunc('month', transaction_date)) FROM pg.public.financial_records WHERE tenant_id = ? AND status = 'Valido'", [tenant_id]).fetchone()
         periodo = str(month_res[0])[:7] if month_res and month_res[0] else "Actual"
 
         return {
@@ -229,12 +229,12 @@ def get_iva_liquidation(
     query = """
         WITH latest_month AS (
             SELECT MAX(date_trunc('month', transaction_date)) as max_month
-            FROM pg.financial_records
+            FROM pg.public.financial_records
             WHERE tenant_id = ? AND status = 'Valido'
         ),
         filtered_records AS (
             SELECT transaction_type, iva_amount, retention_amount, retention_percentage
-            FROM pg.financial_records
+            FROM pg.public.financial_records
             WHERE tenant_id = ? 
               AND status = 'Valido'
               AND date_trunc('month', transaction_date) = (SELECT max_month FROM latest_month)
@@ -256,7 +256,7 @@ def get_iva_liquidation(
         }
         
         # Determine month string for frontend display
-        month_query = "SELECT MAX(date_trunc('month', transaction_date)) FROM pg.financial_records WHERE tenant_id = ? AND status = 'Valido'"
+        month_query = "SELECT MAX(date_trunc('month', transaction_date)) FROM pg.public.financial_records WHERE tenant_id = ? AND status = 'Valido'"
         month_result = duck_con.execute(month_query, [tenant_id]).fetchone()
         month_str = str(month_result[0])[:7] if month_result and month_result[0] else None
 
@@ -285,11 +285,11 @@ def get_top_entities(
         query_clients = """
             WITH latest_month AS (
                 SELECT MAX(date_trunc('month', transaction_date)) as max_month
-                FROM pg.financial_records
+                FROM pg.public.financial_records
                 WHERE tenant_id = ? AND status = 'Valido'
             )
             SELECT nit_dui, SUM(amount) as total_amount
-            FROM pg.financial_records
+            FROM pg.public.financial_records
             WHERE tenant_id = ? 
               AND status = 'Valido'
               AND transaction_type IN ('Ventas Contribuyente', 'Ventas Consumidor')
@@ -306,11 +306,11 @@ def get_top_entities(
         query_suppliers = """
             WITH latest_month AS (
                 SELECT MAX(date_trunc('month', transaction_date)) as max_month
-                FROM pg.financial_records
+                FROM pg.public.financial_records
                 WHERE tenant_id = ? AND status = 'Valido'
             )
             SELECT nit_dui, SUM(amount) as total_amount
-            FROM pg.financial_records
+            FROM pg.public.financial_records
             WHERE tenant_id = ? 
               AND status = 'Valido'
               AND transaction_type = 'Compras'
@@ -346,11 +346,11 @@ def get_document_health(
     query = """
         WITH latest_month AS (
             SELECT MAX(date_trunc('month', transaction_date)) as max_month
-            FROM pg.financial_records
+            FROM pg.public.financial_records
             WHERE tenant_id = ?
         )
         SELECT status, COUNT(*) as count
-        FROM pg.financial_records
+        FROM pg.public.financial_records
         WHERE tenant_id = ?
           AND date_trunc('month', transaction_date) = (SELECT max_month FROM latest_month)
         GROUP BY status;
@@ -398,7 +398,7 @@ def get_financial_trends(
                 EXTRACT('year' FROM transaction_date) AS year_num,
                 SUM(CASE WHEN transaction_type IN ('Ventas Contribuyente', 'Ventas Consumidor') THEN amount ELSE 0 END) AS ventas,
                 SUM(CASE WHEN transaction_type IN ('Compras', 'Sujetos Excluidos', 'Gastos Nomina') THEN amount ELSE 0 END) AS gastos
-            FROM pg.financial_records
+            FROM pg.public.financial_records
             WHERE tenant_id = ? AND status = 'Valido'
             GROUP BY month_num, year_num
         ),
@@ -459,7 +459,7 @@ def get_types_breakdown(
             transaction_type, 
             document_type, 
             SUM(amount) as total
-        FROM pg.financial_records
+        FROM pg.public.financial_records
         WHERE tenant_id = ? AND status = 'Valido'
         GROUP BY transaction_type, document_type
         ORDER BY total DESC;
@@ -528,7 +528,7 @@ def get_payroll_summary(
             SUM(afp_amount)                        AS afp_total,
             SUM(isss_amount)                       AS isss_total,
             SUM(amount - retention_amount - afp_amount - isss_amount) AS salario_neto_total
-        FROM pg.financial_records
+        FROM pg.public.financial_records
         WHERE tenant_id = ?
           AND transaction_type = 'Gastos Nomina'
           AND status = 'Valido'
@@ -571,7 +571,7 @@ def get_ventas_annex(
     query = """
         WITH latest_month AS (
             SELECT MAX(date_trunc('month', transaction_date)) as max_month
-            FROM pg.financial_records
+            FROM pg.public.financial_records
             WHERE tenant_id = ? AND status = 'Valido'
         )
         SELECT 
@@ -585,7 +585,7 @@ def get_ventas_annex(
             amount as gravado,
             iva_amount as iva,
             (amount + iva_amount) as total
-        FROM pg.financial_records
+        FROM pg.public.financial_records
         WHERE tenant_id = ? 
           AND status = 'Valido'
           AND transaction_type IN ('Ventas Contribuyente', 'Ventas Consumidor')
@@ -616,7 +616,7 @@ def get_compras_annex(
     query = """
         WITH latest_month AS (
             SELECT MAX(date_trunc('month', transaction_date)) as max_month
-            FROM pg.financial_records
+            FROM pg.public.financial_records
             WHERE tenant_id = ? AND status = 'Valido'
         )
         SELECT 
@@ -629,7 +629,7 @@ def get_compras_annex(
             amount as gravado,
             iva_amount as iva,
             (amount + iva_amount) as total
-        FROM pg.financial_records
+        FROM pg.public.financial_records
         WHERE tenant_id = ? 
           AND status = 'Valido'
           AND transaction_type = 'Compras'
@@ -660,7 +660,7 @@ def get_payroll_annex(
     query = """
         WITH latest_month AS (
             SELECT MAX(date_trunc('month', transaction_date)) as max_month
-            FROM pg.financial_records
+            FROM pg.public.financial_records
             WHERE tenant_id = ? AND status = 'Valido'
               AND transaction_type = 'Gastos Nomina'
         )
@@ -676,7 +676,7 @@ def get_payroll_annex(
             isss_amount as isss,
             retention_amount as isr,
             (amount - afp_amount - isss_amount - retention_amount) as total -- Salario Neto
-        FROM pg.financial_records
+        FROM pg.public.financial_records
         WHERE tenant_id = ? 
           AND status = 'Valido'
           AND transaction_type = 'Gastos Nomina'
@@ -709,7 +709,7 @@ def get_supplier_rfm_analysis(
                 MAX(transaction_date) as last_purchase_date,
                 COUNT(id) as frequency,
                 SUM(amount) as monetary
-            FROM pg.financial_records
+            FROM pg.public.financial_records
             WHERE tenant_id = ? AND status = 'Valido'
               AND transaction_type = 'Compras'
             GROUP BY nit_dui
@@ -788,7 +788,7 @@ def get_monthly_suppliers(
     query = """
         WITH latest_month AS (
             SELECT MAX(date_trunc('month', transaction_date)) as max_month
-            FROM pg.financial_records
+            FROM pg.public.financial_records
             WHERE tenant_id = ? AND status = 'Valido'
               AND transaction_type = 'Compras'
         ),
@@ -797,7 +797,7 @@ def get_monthly_suppliers(
                 nit_dui as supplier_id,
                 MAX(customer_name) as supplier_name,
                 SUM(amount) as monto_mes
-            FROM pg.financial_records
+            FROM pg.public.financial_records
             WHERE tenant_id = ? AND status = 'Valido'
               AND transaction_type = 'Compras'
               AND date_trunc('month', transaction_date) = (SELECT max_month FROM latest_month)
@@ -809,7 +809,7 @@ def get_monthly_suppliers(
                 MAX(transaction_date) as last_purchase_date,
                 COUNT(id) as frequency,
                 SUM(amount) as total_monetary
-            FROM pg.financial_records
+            FROM pg.public.financial_records
             WHERE tenant_id = ? AND status = 'Valido'
               AND transaction_type = 'Compras'
             GROUP BY nit_dui
@@ -854,7 +854,7 @@ def get_monthly_suppliers(
             item["narrativa"] = mapping["insight"].replace("Cliente", "Proveedor").replace("compra", "venta")
             data.append(item)
 
-        month_res = duck_con.execute("SELECT MAX(date_trunc('month', transaction_date)) FROM pg.financial_records WHERE tenant_id = ? AND status = 'Valido' AND transaction_type = 'Compras'", [tenant_id]).fetchone()
+        month_res = duck_con.execute("SELECT MAX(date_trunc('month', transaction_date)) FROM pg.public.financial_records WHERE tenant_id = ? AND status = 'Valido' AND transaction_type = 'Compras'", [tenant_id]).fetchone()
         periodo = str(month_res[0])[:7] if month_res and month_res[0] else "Actual"
 
         return {

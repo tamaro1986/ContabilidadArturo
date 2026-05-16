@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import { fetchWithAuth } from "@/lib/api";
 import AuthGuard from "../../components/auth/AuthGuard";
 import TaxLiquidationCard from "../../components/analytics/TaxLiquidationCard";
 
@@ -174,22 +175,10 @@ export default function DashboardPage() {
         formData.append('document_type', validationResult.detectedType || 'ventas-contribuyentes');
         
         try {
-            const { data: { session } } = await supabase.auth.getSession();
-            if (!session) throw new Error("No hay una sesión activa para procesar la carga.");
-
-            const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
-            const response = await fetch(`${apiUrl}/financial/upload`, {
+            await fetchWithAuth('/financial/upload', {
                 method: 'POST',
-                headers: {
-                    "Authorization": `Bearer ${session.access_token}`
-                },
                 body: formData,
             });
-            
-            if (!response.ok) {
-                const err = await response.json();
-                throw new Error(err.detail || 'Error al procesar el archivo');
-            }
             
             // Éxito: Limpiar estados
             setValidationResult(null);
@@ -199,7 +188,7 @@ export default function DashboardPage() {
         } catch (err: any) {
             console.error("Upload error:", err);
             setUploadError(err.message);
-            alert(`Error al procesar: ${err.message}`);
+            // No alertamos aquí porque ValidationAlerts ya muestra el error visualmente si se le pasa processingError
         } finally {
             setIsUploading(false);
         }
@@ -218,8 +207,10 @@ export default function DashboardPage() {
             try {
                 const { data: { session: currentSession } } = await supabase.auth.getSession();
                 if (!currentSession) {
-                    setError("No autenticado");
-                    setLoading(false);
+                    // No hay sesión - redirigir a login en vez de mostrar error
+                    if (typeof window !== 'undefined') {
+                        window.location.href = '/login';
+                    }
                     return;
                 }
                 setSession(currentSession);
@@ -267,53 +258,37 @@ export default function DashboardPage() {
                 }));
                 setCompaniesList(mappedCompanies as any);
 
-                // 3. Fetch Analytics from Backend (Get fresh session for analytical calls)
-                const { data: { session: analyticalSession } } = await supabase.auth.getSession();
-                if (analyticalSession) {
-                    const token = analyticalSession.access_token;
-                    setAuthToken(token);
-                    const headers: HeadersInit = { 
-                        "Authorization": `Bearer ${token}`,
-                        "Content-Type": "application/json"
-                    };
+                // 3. Fetch Analytics from Backend
+                try {
+                    const [trends, types, iva, top, health, rfm, srfm] = await Promise.all([
+                        fetchWithAuth('/analytics/financial-trends').then(res => res.json()),
+                        fetchWithAuth('/analytics/types-breakdown').then(res => res.json()),
+                        fetchWithAuth('/analytics/tax-summary/iva-liquidation').then(res => res.json()),
+                        fetchWithAuth('/analytics/tax-summary/top-entities').then(res => res.json()),
+                        fetchWithAuth('/analytics/tax-summary/document-health').then(res => res.json()),
+                        fetchWithAuth('/analytics/rfm').then(res => res.json()),
+                        fetchWithAuth('/analytics/supplier-rfm').then(res => res.json()),
+                    ]);
 
-                    const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
-                    
-                    try {
-                        const fetchWithAuth = async (url: string) => {
-                            const res = await fetch(url, { headers });
-                            if (!res.ok) {
-                                if (res.status === 401) {
-                                    console.error("Unauthorized call to:", url);
-                                }
-                                throw new Error(`API Error ${res.status} on ${url}`);
-                            }
-                            return res.json();
-                        };
-
-                        const [trends, types, iva, top, health, rfm, srfm] = await Promise.all([
-                            fetchWithAuth(`${API_URL}/analytics/financial-trends`),
-                            fetchWithAuth(`${API_URL}/analytics/types-breakdown`),
-                            fetchWithAuth(`${API_URL}/analytics/tax-summary/iva-liquidation`),
-                            fetchWithAuth(`${API_URL}/analytics/tax-summary/top-entities`),
-                            fetchWithAuth(`${API_URL}/analytics/tax-summary/document-health`),
-                            fetchWithAuth(`${API_URL}/analytics/rfm`),
-                            fetchWithAuth(`${API_URL}/analytics/supplier-rfm`)
-                        ]);
-
-                        setTrendsData(trends.data || []);
-                        setTypesData(types.data || { ventas: [], gastos: [] });
-                        setTaxData({
-                            liquidation: iva.data,
-                            topEntities: top.data,
-                            health: health.data
-                        });
-                        setCustomerData(rfm.data || []);
-                        setSupplierData(srfm.data || []);
-                    } catch (apiErr) {
-                        console.error("Backend API Error:", apiErr);
-                        // Silently fail analytics if backend is not ready, dashboard will show 0s
+                    setTrendsData(trends.data || []);
+                    setTypesData(types.data || { ventas: [], gastos: [] });
+                    setTaxData({
+                        liquidation: iva.data,
+                        topEntities: top.data,
+                        health: health.data
+                    });
+                    setCustomerData(rfm.data || []);
+                    setSupplierData(srfm.data || []);
+                } catch (apiErr: any) {
+                    console.error("Backend API Error:", apiErr);
+                    // Si es un error de autenticación, fetchWithAuth ya redirige a /login.
+                    // Solo mostramos el error si es otro tipo de falla (ej: DB caída, timeout).
+                    const isAuthError = apiErr?.message?.includes('sesión') || apiErr?.message?.includes('sesion');
+                    if (!isAuthError) {
+                        setLoading(false);
+                        setError("Error interno: No se pudieron procesar las analíticas financieras. Verifique que el servidor backend esté activo.");
                     }
+                    // Si es auth error, el redirect ya se maneja en fetchWithAuth
                 }
 
             } catch (err: unknown) {
@@ -984,10 +959,7 @@ export default function DashboardPage() {
                 </div>
 
                 {/* ── AI CHAT WIDGET ────────────────────────────────────────────────── */}
-                <AiChatWidget 
-                    token={authToken} 
-                    apiUrl={process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1"} 
-                />
+                <AiChatWidget />
             </div>
         </AuthGuard>
     );

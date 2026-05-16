@@ -1,8 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from supabase import Client
-from app.schemas.auth import UserLogin, UserRegister, Token, UserResponse, UserInvite
+from app.schemas.auth import (
+    UserLogin, UserRegister, Token, UserResponse, UserInvite, 
+    ForgotPasswordRequest, ResetPasswordRequest
+)
 from app.services.supabase_client import get_supabase_client, get_supabase_admin_client
 from app.core.security import get_current_user
+from app.core.config import settings
 
 router = APIRouter()
 
@@ -23,7 +27,6 @@ def invite_user(
     tenant_id = profile.data.get("tenant_id")
 
     # Bypass para desarrollo local si MOCK_MODE está activo
-    from app.core.config import settings
     if settings.MOCK_MODE:
         return {"message": f"[MOCK] Invitación enviada exitosamente a {invite_in.email} para el tenant {tenant_id}"}
 
@@ -103,14 +106,16 @@ def register(
             
         tenant_id = tenant_res.data[0]['id']
         
-        # 3. Crear el User Profile como 'contador'
-        profile_res = admin_supabase.table("user_profiles").insert({
+        # 3. Crear/actualizar el User Profile como 'contador'
+        # Nota: El trigger de Supabase puede haber creado el perfil automáticamente,
+        # por eso usamos upsert para evitar conflictos de clave duplicada.
+        profile_res = admin_supabase.table("user_profiles").upsert({
             "id": user_id,
             "tenant_id": tenant_id,
             "role": "contador",
             "full_name": user_in.full_name,
             "email": user_in.email
-        }).execute()
+        }, on_conflict="id").execute()
 
         return {"message": "Usuario registrado exitosamente. Por favor, verifique su correo electrónico para confirmar su cuenta."}
     except Exception as e:
@@ -161,4 +166,42 @@ def get_me(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(e),
+        )
+
+@router.post("/forgot-password")
+def forgot_password(
+    request: ForgotPasswordRequest,
+    supabase: Client = Depends(get_supabase_client)
+):
+    try:
+        # redirectTo debe coincidir con uno de los dominios permitidos en Supabase
+        redirect_url = f"{settings.FRONTEND_URL}/reset-password"
+        supabase.auth.reset_password_for_email(
+            request.email,
+            {"redirect_to": redirect_url}
+        )
+        return {"message": "Si el correo está registrado, recibirás un enlace para restablecer tu contraseña."}
+    except Exception as e:
+        # Por seguridad, solemos retornar el mismo mensaje incluso si falla (evita enumeración de usuarios)
+        # Pero para debugging interno podemos registrarlo
+        print(f"Error en forgot_password: {e}")
+        return {"message": "Si el correo está registrado, recibirás un enlace para restablecer tu contraseña."}
+
+@router.post("/reset-password")
+def reset_password(
+    request: ResetPasswordRequest,
+    current_user = Depends(get_current_user),
+    supabase: Client = Depends(get_supabase_client)
+):
+    """
+    Este endpoint requiere que el usuario ya tenga una sesión activa.
+    Supabase crea una sesión automáticamente al hacer clic en el enlace de recuperación.
+    """
+    try:
+        supabase.auth.update_user({"password": request.password})
+        return {"message": "Contraseña actualizada exitosamente."}
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"No se pudo actualizar la contraseña: {str(e)}"
         )
