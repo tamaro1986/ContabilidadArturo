@@ -40,6 +40,7 @@ def invite_user(
         # 2. Perform the invitation via Supabase Auth Admin API
         # We inject the tenant_id and role into the raw_user_meta_data
         # so the DB trigger can pick it up.
+        redirect_url = f"{settings.FRONTEND_URL}/auth/set-password"
         admin_supabase.auth.admin.invite_user_by_email(
             invite_in.email,
             {
@@ -48,7 +49,7 @@ def invite_user(
                     "role": invite_in.role,
                     "tenant_id": tenant_id
                 },
-                "redirectTo": "http://localhost:3000/auth/set-password" 
+                "redirectTo": redirect_url
             }
         )
         return {"message": f"Invitación enviada exitosamente a {invite_in.email}"}
@@ -87,7 +88,8 @@ def register(
                 "data": {
                     "full_name": user_in.full_name,
                     "tenant_name": user_in.tenant_name
-                }
+                },
+                "email_redirect_to": f"{settings.FRONTEND_URL}/dashboard"
             }
         })
         
@@ -173,18 +175,24 @@ def forgot_password(
     request: ForgotPasswordRequest,
     supabase: Client = Depends(get_supabase_client)
 ):
+    # Bypass para desarrollo local si MOCK_MODE está activo
+    if settings.MOCK_MODE:
+        return {"message": f"[MOCK] Enlace de recuperación enviado a {request.email} (Redirect: {settings.FRONTEND_URL}/reset-password)"}
+
     try:
         # redirectTo debe coincidir con uno de los dominios permitidos en Supabase
         redirect_url = f"{settings.FRONTEND_URL}/reset-password"
+        
+        # En gotrue-python v2.x el parámetro es 'options' y contiene 'redirect_to'
         supabase.auth.reset_password_for_email(
             request.email,
-            {"redirect_to": redirect_url}
+            options={"redirect_to": redirect_url}
         )
         return {"message": "Si el correo está registrado, recibirás un enlace para restablecer tu contraseña."}
     except Exception as e:
-        # Por seguridad, solemos retornar el mismo mensaje incluso si falla (evita enumeración de usuarios)
-        # Pero para debugging interno podemos registrarlo
-        print(f"Error en forgot_password: {e}")
+        # Registramos el error real en los logs del servidor
+        print(f"Error crítico en forgot_password para {request.email}: {type(e).__name__}: {e}")
+        # Retornamos el mismo mensaje por seguridad (evitar user enumeration)
         return {"message": "Si el correo está registrado, recibirás un enlace para restablecer tu contraseña."}
 
 @router.post("/reset-password")
@@ -201,6 +209,7 @@ def reset_password(
         supabase.auth.update_user({"password": request.password})
         return {"message": "Contraseña actualizada exitosamente."}
     except Exception as e:
+        print(f"Error en reset_password para {current_user.email}: {e}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"No se pudo actualizar la contraseña: {str(e)}"
