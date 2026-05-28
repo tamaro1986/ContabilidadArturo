@@ -38,8 +38,7 @@ def process_csv_task(file_path: str, tenant_id: str):
         
         # 2. Análisis Vectorial con DuckDB
         # Intentamos detectar automáticamente el delimitador y tipo de Hacienda
-        query = f"SELECT count(*) as total_rows FROM read_csv_auto('{file_path}')"
-        result = con.execute(query).fetchone()
+        result = con.execute("SELECT count(*) as total_rows FROM read_csv_auto(?)", [file_path]).fetchone()
         total_rows = result[0]
         
         logger.info(f"Archivo procesado: {total_rows} registros encontrados.")

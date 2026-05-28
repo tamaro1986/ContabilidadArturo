@@ -67,7 +67,7 @@ export default function Paywall({ tenantId, onSuccess }: PaywallProps) {
 
         <h1 className="text-4xl font-black text-white tracking-tight mb-4 uppercase">Periodo de Prueba Finalizado</h1>
         <p className="text-zinc-400 text-lg font-medium mb-12">
-          Su acceso a <span className="text-emerald-400 font-bold">ContabilidadArturo Premium</span> ha expirado. 
+          Su acceso a <span className="text-emerald-400 font-bold">Integrum Premium</span> ha expirado. 
           Suscríbase hoy para continuar transformando su gestión fiscal.
         </p>
 

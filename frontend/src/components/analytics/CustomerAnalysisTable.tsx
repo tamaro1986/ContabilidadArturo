@@ -51,9 +51,9 @@ export default function CustomerAnalysisTable({ data, onSelectCustomer }: Custom
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-zinc-100">
-                        {data.map((customer) => (
+                        {data.map((customer, i) => (
                             <tr 
-                                key={customer.id} 
+                                key={customer.id ?? `cust-${i}`} 
                                 onClick={() => onSelectCustomer(customer)}
                                 className="group hover:bg-zinc-50 transition-all cursor-pointer"
                             >
@@ -72,12 +72,12 @@ export default function CustomerAnalysisTable({ data, onSelectCustomer }: Custom
                                 </td>
                                 <td className="px-8 py-6 text-right">
                                     <span className="text-sm font-black text-zinc-900 font-tnum">
-                                        ${customer.gananciaHistorica.toLocaleString('es-SV', { minimumFractionDigits: 2 })}
+                                        ${(customer.gananciaHistorica ?? 0).toLocaleString('es-SV', { minimumFractionDigits: 2 })}
                                     </span>
                                 </td>
                                 <td className="px-8 py-6">
                                     <div className="flex justify-center">
-                                        <MiniTrendChart values={customer.tendenciaAnual} />
+                                        <MiniTrendChart values={customer.tendenciaAnual ?? []} />
                                     </div>
                                 </td>
                             </tr>

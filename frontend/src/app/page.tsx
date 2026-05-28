@@ -238,7 +238,7 @@ export default function Home() {
                 </div>
 
                 <button
-                  onClick={() => router.push(i === 2 ? "/register" : "/register")}
+                  onClick={() => router.push("/register")}
                   className={`w-full py-3.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all active:scale-95 ${plan.ctaStyle}`}
                 >
                   {plan.cta}

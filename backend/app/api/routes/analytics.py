@@ -11,27 +11,27 @@ router = APIRouter()
 
 SEGMENT_MAPPING = {
     "estrella": {
-        "label": "Clientes Estrella",
+        "label": "Campeones",
         "color": "var(--color-secondary)",  # Official Stitch Green
         "insight": "Genera altos ingresos y nos compra constantemente."
     },
     "habituales": {
-        "label": "Compradores Habituales",
+        "label": "Leales",
         "color": "var(--color-primary)",  # Official Stitch Dark Blue
         "insight": "Compra con regularidad. Una relación comercial estable y confiable."
     },
     "prometedores": {
-        "label": "Nuevos Prometedores",
+        "label": "Leales",
         "color": "var(--color-warning)",  # Official Stitch Warning Amber
         "insight": "Cliente reciente con buen potencial de crecimiento."
     },
     "desarrollo": {
-        "label": "En Desarrollo",
+        "label": "Leales",
         "color": "var(--color-surface-tint)",  # Semantic Slate/Blue
         "insight": "Clientes con compras esporádicas; ideal para ofertas de frecuencia."
     },
     "atencion": {
-        "label": "Requieren Atención",
+        "label": "En Riesgo",
         "color": "var(--color-error)",  # Official Stitch Error Red
         "insight": "Solía comprar mucho, pero no lo ha hecho recientemente."
     }
@@ -103,11 +103,20 @@ def get_rfm_analysis(
             key = item.pop("segment_key")
             mapping = SEGMENT_MAPPING.get(key, SEGMENT_MAPPING["desarrollo"])
             
-            item["etiqueta"] = mapping["label"]
-            item["color"] = mapping["color"]
-            item["narrativa"] = mapping["insight"]
+            # Mapear campos del backend al formato esperado por el frontend
+            final_item = {
+                "id": item.get("client_id", ""),
+                "nombre": item.get("customer_name", "DESCONOCIDO"),
+                "giro": "",  # No disponible en datos fiscales
+                "estado": mapping["label"],
+                "gananciaHistorica": float(item.get("monetary", 0) or 0),
+                "ticketPromedio": float(item.get("monetary", 0) or 0) / max(float(item.get("frequency", 1) or 1), 1),
+                "tendenciaAnual": [],  # Se calculará en versión futura
+                "insightIA": mapping["insight"],
+                "historialFacturas": []
+            }
             
-            final_data.append(item)
+            final_data.append(final_item)
             
             # Actualizar resumen para gráficos
             label = mapping["label"]
@@ -455,17 +464,23 @@ def get_types_breakdown(
         raise HTTPException(status_code=400, detail="Tenant ID no encontrado")
 
     query = """
+        WITH latest_month AS (
+            SELECT MAX(date_trunc('month', transaction_date)) as max_month
+            FROM pg.public.financial_records
+            WHERE tenant_id = ? AND status = 'Valido'
+        )
         SELECT 
             transaction_type, 
             document_type, 
             SUM(amount) as total
         FROM pg.public.financial_records
         WHERE tenant_id = ? AND status = 'Valido'
+          AND date_trunc('month', transaction_date) = (SELECT max_month FROM latest_month)
         GROUP BY transaction_type, document_type
         ORDER BY total DESC;
     """
     try:
-        results = duck_con.execute(query, [tenant_id]).fetchall()
+        results = duck_con.execute(query, [tenant_id, tenant_id]).fetchall()
         
         ventas_data = []
         gastos_data = []
@@ -758,11 +773,31 @@ def get_supplier_rfm_analysis(
             # For now, let's reuse SEGMENT_MAPPING but with supplier-focused insights if needed.
             mapping = SEGMENT_MAPPING.get(key, SEGMENT_MAPPING["desarrollo"])
             
-            item["etiqueta"] = mapping["label"]
-            item["color"] = mapping["color"]
-            item["narrativa"] = mapping["insight"].replace("Cliente", "Proveedor").replace("compra", "venta")
+            # Mapear campos del backend al formato esperado por el frontend
+            # Categorizar proveedores basado en frecuencia y monto
+            frequency = float(item.get("frequency", 0) or 0)
+            monetary = float(item.get("monetary", 0) or 0)
             
-            final_data.append(item)
+            if frequency >= 10:
+                categoria = "Socio Estratégico"
+            elif frequency >= 5:
+                categoria = "Gasto Recurrente"
+            else:
+                categoria = "Eventual"
+            
+            final_item = {
+                "id": item.get("supplier_id", ""),
+                "nombre": item.get("supplier_name", "DESCONOCIDO"),
+                "giro": "",  # No disponible en datos fiscales
+                "categoria": categoria,
+                "gastoHistorico": monetary,
+                "ordenPromedio": monetary / max(frequency, 1),
+                "tendenciaAnual": [],  # Se calculará en versión futura
+                "insightIA": mapping["insight"].replace("Cliente", "Proveedor").replace("compra", "venta"),
+                "historialOrdenes": []
+            }
+            
+            final_data.append(final_item)
             
             label = mapping["label"]
             summary_counts[label] = summary_counts.get(label, 0) + 1

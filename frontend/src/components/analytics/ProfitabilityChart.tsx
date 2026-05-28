@@ -60,7 +60,7 @@ export default function ProfitabilityChart({ data }: { data: TrendData[] }) {
             bars: renderedBars, 
             yLabels: yTicks,
             xLabels: processedData.map((d, i) => ({ 
-                label: d.mes.substring(0, 3), 
+                label: (d.mes ?? '').substring(0, 3), 
                 x: padding.left + i * xStep + xStep / 2 
             })),
             svgWidth,

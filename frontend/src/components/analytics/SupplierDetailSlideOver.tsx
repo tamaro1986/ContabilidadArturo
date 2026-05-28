@@ -25,19 +25,13 @@ const CloseIcon = () => (
 export default function SupplierDetailSlideOver({ supplier, isOpen, onClose }: SupplierDetailSlideOverProps) {
     const [mounted, setMounted] = useState(isOpen);
 
-    // Sync mounted state during render if isOpen changes to true
-    if (isOpen && !mounted) {
-        setMounted(true);
-    }
-
     useEffect(() => {
         if (isOpen) {
+            setMounted(true);
             document.body.style.overflow = 'hidden';
         } else {
             document.body.style.overflow = 'unset';
-            const timer = setTimeout(() => {
-                setMounted(false);
-            }, 500);
+            const timer = setTimeout(() => setMounted(false), 500);
             return () => {
                 clearTimeout(timer);
                 document.body.style.overflow = 'unset';
@@ -78,13 +72,13 @@ export default function SupplierDetailSlideOver({ supplier, isOpen, onClose }: S
                         <div className="bg-zinc-50 border border-zinc-200 rounded-2xl p-6">
                             <p className="text-[9px] font-black text-zinc-400 uppercase tracking-widest mb-2">Gasto Histórico</p>
                             <p className="text-2xl font-black text-zinc-900 font-tnum">
-                                ${supplier?.gastoHistorico.toLocaleString('es-SV', { minimumFractionDigits: 2 })}
+                                ${(supplier?.gastoHistorico ?? 0).toLocaleString('es-SV', { minimumFractionDigits: 2 })}
                             </p>
                         </div>
                         <div className="bg-zinc-50 border border-zinc-200 rounded-2xl p-6">
                             <p className="text-[9px] font-black text-zinc-400 uppercase tracking-widest mb-2">Orden Promedio</p>
                             <p className="text-2xl font-black text-zinc-900 font-tnum">
-                                ${supplier?.ordenPromedio.toLocaleString('es-SV', { minimumFractionDigits: 2 })}
+                                ${(supplier?.ordenPromedio ?? 0).toLocaleString('es-SV', { minimumFractionDigits: 2 })}
                             </p>
                         </div>
                     </div>
@@ -109,7 +103,7 @@ export default function SupplierDetailSlideOver({ supplier, isOpen, onClose }: S
                     <div>
                         <h3 className="text-[11px] font-black text-zinc-900 uppercase tracking-widest mb-6">Historial de Órdenes / Gastos</h3>
                         <div className="space-y-3">
-                            {supplier?.historialOrdenes.map((order, i) => (
+                            {(supplier?.historialOrdenes ?? []).map((order, i) => (
                                 <div key={i} className="flex items-center justify-between p-4 border border-zinc-100 rounded-xl hover:border-zinc-200 transition-colors">
                                     <div className="flex items-center gap-4">
                                         <div className={`w-2 h-2 rounded-full ${
@@ -122,7 +116,7 @@ export default function SupplierDetailSlideOver({ supplier, isOpen, onClose }: S
                                         </div>
                                     </div>
                                     <div className="text-right">
-                                        <p className="text-xs font-black text-zinc-900 font-tnum">${order.monto.toLocaleString('es-SV', { minimumFractionDigits: 2 })}</p>
+                                        <p className="text-xs font-black text-zinc-900 font-tnum">${(order.monto ?? 0).toLocaleString('es-SV', { minimumFractionDigits: 2 })}</p>
                                         <p className={`text-[9px] font-black uppercase tracking-tighter mt-0.5 ${
                                             order.estado === 'Pagada' ? 'text-emerald-600' : 
                                             order.estado === 'Pendiente' ? 'text-amber-600' : 'text-red-600'

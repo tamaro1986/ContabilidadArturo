@@ -41,8 +41,8 @@ const SupplierExpenseTreemap: React.FC<SupplierExpenseTreemapProps> = ({
     const nodes: TreemapNode[] = topSuppliers.map(s => ({
         id: s.id,
         nombre: s.nombre,
-        valor: s.gastoHistorico,
-        pct: (s.gastoHistorico / totalExpense) * 100,
+        valor: s.gastoHistorico ?? 0,
+        pct: totalExpense > 0 ? ((s.gastoHistorico ?? 0) / totalExpense) * 100 : 0,
         categoria: s.categoria,
         raw: s
     }));
@@ -52,8 +52,8 @@ const SupplierExpenseTreemap: React.FC<SupplierExpenseTreemapProps> = ({
             id: 'others',
             nombre: 'Otros Proveedores',
             valor: othersExpense,
-            pct: (othersExpense / totalExpense) * 100,
-            categoria: 'zinc', // Bloque consolidado "Otros"
+            pct: totalExpense > 0 ? (othersExpense / totalExpense) * 100 : 0,
+            categoria: 'zinc',
             raw: null
         });
     }
@@ -61,6 +61,20 @@ const SupplierExpenseTreemap: React.FC<SupplierExpenseTreemapProps> = ({
     // 4. Agrupar en filas (Heurística simple para mantener bloques legibles)
     // Fila 1: Los dos más grandes (o el más grande si es > 50%)
     // Fila 2: El resto
+    if (nodes.length === 0 || totalExpense === 0) {
+        return (
+            <div className="w-full h-96 flex flex-col items-center justify-center rounded-2xl bg-zinc-50 text-zinc-400">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="mb-4 opacity-50">
+                    <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/>
+                    <line x1="3" y1="6" x2="21" y2="6"/>
+                    <path d="M16 10a4 4 0 0 1-8 0"/>
+                </svg>
+                <p className="text-sm font-medium">Sin datos de proveedores</p>
+                <p className="text-xs mt-1 opacity-70">Sube archivos fiscales para ver el análisis</p>
+            </div>
+        );
+    }
+
     const firstRowNodes = nodes.slice(0, nodes[0].pct > 50 ? 1 : 2);
     const secondRowNodes = nodes.slice(firstRowNodes.length);
 
@@ -92,9 +106,9 @@ const SupplierExpenseTreemap: React.FC<SupplierExpenseTreemapProps> = ({
                 className="flex gap-1 transition-all duration-500" 
                 style={{ height: `${firstRowPct}%` }}
             >
-                {firstRowNodes.map((node) => (
+                {firstRowNodes.map((node, i) => (
                     <div
-                        key={node.id}
+                        key={node.id ?? i}
                         onClick={() => node.raw && onSelectSupplier?.(node.raw)}
                         className={`
                             relative p-5 flex flex-col justify-between 
@@ -135,9 +149,9 @@ const SupplierExpenseTreemap: React.FC<SupplierExpenseTreemapProps> = ({
                     className="flex gap-1 transition-all duration-500" 
                     style={{ height: `${secondRowPct}%` }}
                 >
-                    {secondRowNodes.map((node) => (
+                    {secondRowNodes.map((node, i) => (
                         <div
-                            key={node.id}
+                            key={node.id ?? `sec-${i}`}
                             onClick={() => node.raw && onSelectSupplier?.(node.raw)}
                             className={`
                                 relative p-4 flex flex-col justify-between 

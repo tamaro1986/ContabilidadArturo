@@ -51,9 +51,9 @@ export default function SupplierAnalysisTable({ data, onSelectSupplier }: Suppli
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-zinc-100">
-                        {data.map((supplier) => (
+                        {data.map((supplier, i) => (
                             <tr 
-                                key={supplier.id} 
+                                key={supplier.id ?? `sup-${i}`} 
                                 onClick={() => onSelectSupplier(supplier)}
                                 className="group hover:bg-zinc-50 transition-all cursor-pointer"
                             >
@@ -72,12 +72,12 @@ export default function SupplierAnalysisTable({ data, onSelectSupplier }: Suppli
                                 </td>
                                 <td className="px-8 py-6 text-right">
                                     <span className="text-sm font-black text-zinc-900 font-tnum">
-                                        ${supplier.gastoHistorico.toLocaleString('es-SV', { minimumFractionDigits: 2 })}
+                                        ${(supplier.gastoHistorico ?? 0).toLocaleString('es-SV', { minimumFractionDigits: 2 })}
                                     </span>
                                 </td>
                                 <td className="px-8 py-6">
                                     <div className="flex justify-center">
-                                        <MiniTrendChart values={supplier.tendenciaAnual} />
+                                        <MiniTrendChart values={supplier.tendenciaAnual ?? []} />
                                     </div>
                                 </td>
                             </tr>

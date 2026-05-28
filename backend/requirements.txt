@@ -1,6 +1,7 @@
 fastapi
 uvicorn[standard]
 duckdb
+psycopg2-binary
 python-multipart
 supabase
 python-dotenv
@@ -15,3 +16,4 @@ langchain
 langchain-openai
 langchain-community
 langchain-core
+aiofiles

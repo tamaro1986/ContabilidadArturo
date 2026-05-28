@@ -45,6 +45,7 @@ function LoginContent() {
       return
     }
 
+    setLoading(false)
     router.push('/dashboard')
   }
 

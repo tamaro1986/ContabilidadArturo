@@ -33,7 +33,7 @@ export function MonthlyCustomerChart({ data, periodo }: MonthlyCustomerChartProp
     const processedBars = data.map((d, i) => {
       const width = (d.monto_mes / maxMonto) * barMaxW;
       const displayName = d.customer_name.length > 22 
-        ? d.customer_name.substring(0, 20) + "..." 
+        ? (d.customer_name ?? '').substring(0, 20) + "..." 
         : d.customer_name;
       
       return {

@@ -188,9 +188,28 @@ export default function DashboardPage() {
         } catch (err: any) {
             console.error("Upload error:", err);
             setUploadError(err.message);
-            // No alertamos aquí porque ValidationAlerts ya muestra el error visualmente si se le pasa processingError
         } finally {
             setIsUploading(false);
+        }
+    };
+
+    const handleResetCompany = async (company: Company) => {
+        if (!confirm(`¿Estás seguro de eliminar TODOS los datos de "${company.name}"?\n\nEsto eliminará:\n- ${company.totalRecords || 0} registros financieros\n- Historial de cargas\n- Documentos fiscales\n\nEsta acción no se puede deshacer.`)) {
+            return;
+        }
+        try {
+            await fetchWithAuth(`/financial/company/${company.id}/records`, {
+                method: 'DELETE',
+            });
+            setCompaniesList(prev => prev.map(c => 
+                c.id === company.id ? { ...c, totalRecords: 0, lastProcessedMonth: undefined } : c
+            ));
+            setSelectedCompanyForUpload(null);
+            setRefreshHistory(prev => prev + 1);
+            alert("Datos de la empresa eliminados correctamente.");
+        } catch (err: any) {
+            console.error("Reset error:", err);
+            alert(`Error al resetear: ${err.message}`);
         }
     };
 
@@ -250,50 +269,43 @@ export default function DashboardPage() {
                     .select('*')
                     .order('name');
                 
-                // Aseguramos que todas tengan un status para la UI
+                // Mapear snake_case de BD a camelCase del frontend
                 const mappedCompanies = (companies || []).map(c => ({
                     ...c,
                     status: c.status || 'active',
-                    totalRecords: c.totalRecords || 0
+                    totalRecords: c.total_records ?? 0,
+                    lastProcessedMonth: c.last_processed_month || undefined,
                 }));
                 setCompaniesList(mappedCompanies as any);
 
                 // 3. Fetch Analytics from Backend
-                try {
-                    const [trends, types, iva, top, health, rfm, srfm] = await Promise.all([
-                        fetchWithAuth('/analytics/financial-trends').then(res => res.json()),
-                        fetchWithAuth('/analytics/types-breakdown').then(res => res.json()),
-                        fetchWithAuth('/analytics/tax-summary/iva-liquidation').then(res => res.json()),
-                        fetchWithAuth('/analytics/tax-summary/top-entities').then(res => res.json()),
-                        fetchWithAuth('/analytics/tax-summary/document-health').then(res => res.json()),
-                        fetchWithAuth('/analytics/rfm').then(res => res.json()),
-                        fetchWithAuth('/analytics/supplier-rfm').then(res => res.json()),
-                    ]);
+                const fetchAnalytics = async () => {
+                    const endpoints = [
+                        { url: '/analytics/financial-trends', setter: (d: any) => setTrendsData(d || []) },
+                        { url: '/analytics/types-breakdown', setter: (d: any) => setTypesData(d || { ventas: [], gastos: [] }) },
+                        { url: '/analytics/tax-summary/iva-liquidation', setter: (d: any) => setTaxData((prev: any) => ({ ...(prev || { liquidation: null, topEntities: [], health: null }), liquidation: d })) },
+                        { url: '/analytics/tax-summary/top-entities', setter: (d: any) => setTaxData((prev: any) => ({ ...(prev || { liquidation: null, topEntities: [], health: null }), topEntities: d })) },
+                        { url: '/analytics/tax-summary/document-health', setter: (d: any) => setTaxData((prev: any) => ({ ...(prev || { liquidation: null, topEntities: [], health: null }), health: d })) },
+                        { url: '/analytics/rfm', setter: (d: any) => setCustomerData(d || []) },
+                        { url: '/analytics/supplier-rfm', setter: (d: any) => setSupplierData(d || []) },
+                    ];
 
-                    setTrendsData(trends.data || []);
-                    setTypesData(types.data || { ventas: [], gastos: [] });
-                    setTaxData({
-                        liquidation: iva.data,
-                        topEntities: top.data,
-                        health: health.data
-                    });
-                    setCustomerData(rfm.data || []);
-                    setSupplierData(srfm.data || []);
-                } catch (apiErr: any) {
-                    console.error("Backend API Error:", apiErr);
-                    // Si es un error de autenticación, fetchWithAuth ya redirige a /login.
-                    // Solo mostramos el error si es otro tipo de falla (ej: DB caída, timeout).
-                    const isAuthError = apiErr?.message?.includes('sesión') || apiErr?.message?.includes('sesion');
-                    if (!isAuthError) {
-                        setLoading(false);
-                        setError("Error interno: No se pudieron procesar las analíticas financieras. Verifique que el servidor backend esté activo.");
-                    }
-                    // Si es auth error, el redirect ya se maneja en fetchWithAuth
-                }
+                    await Promise.all(endpoints.map(async ({ url, setter }) => {
+                        try {
+                            const res = await fetchWithAuth(url);
+                            const json = await res.json();
+                            setter(json.data);
+                        } catch (err) {
+                            console.error(`Error loading ${url}:`, err);
+                        }
+                    }));
+                };
+
+                await fetchAnalytics();
 
             } catch (err: unknown) {
                 console.error("Fetch Error:", err);
-                setError("Error al cargar los datos del ecosistema."); 
+                setError("Error al cargar los datos del ecosistema.");
             } finally {
                 setLoading(false);
             }
@@ -315,7 +327,7 @@ export default function DashboardPage() {
             </div>
             <div className="text-center">
                 <p className="text-white font-black tracking-[0.5em] uppercase text-xs mb-3 animate-pulse">Sincronizando Ecosistema</p>
-                <p className="text-emerald-500/50 text-[10px] font-bold uppercase tracking-widest">ContabilidadArturo Premium v3.0</p>
+                <p className="text-emerald-500/50 text-[10px] font-bold uppercase tracking-widest">Integrum Premium v3.0</p>
             </div>
         </div>
     );
@@ -328,6 +340,8 @@ export default function DashboardPage() {
             </div>
         </div>
     );
+
+    const hasData = trendsData.length > 0 || (typesData?.ventas?.length ?? 0) > 0;
 
     const businessSidebar = [
         { group: "ESTRATEGIA", items: [
@@ -355,11 +369,11 @@ export default function DashboardPage() {
                 <aside className={`bg-zinc-950 text-white transition-all duration-500 ease-in-out flex flex-col z-50 ${sidebarOpen ? 'w-72' : 'w-20'}`}>
                     {/* Logo Area */}
                     <div className="p-6 h-20 flex items-center gap-4 overflow-hidden border-b border-white/5">
-                        <div className={`min-w-10 h-10 rounded-xl flex items-center justify-center text-white font-black text-xl shadow-lg transition-all duration-700 ${persona === 'business' ? 'bg-linear-to-br from-emerald-400 to-emerald-600 shadow-emerald-500/20' : 'bg-linear-to-br from-blue-500 to-blue-700 shadow-blue-500/20'}`}>A</div>
+                        <img src="/logo-garcia.png" alt="Logo" className="w-10 h-10 object-contain" />
                         {sidebarOpen && (
                             <div className="flex flex-col leading-none">
-                                <span className="text-lg font-black tracking-tight text-white uppercase">Arturo</span>
-                                <span className="text-[10px] font-bold tracking-[0.3em] text-emerald-500 uppercase opacity-80">Integrum</span>
+                                <span className="text-lg font-black tracking-tight text-white uppercase">Garcia</span>
+                                <span className="text-[10px] font-bold tracking-[0.3em] text-emerald-500 uppercase opacity-80">INTEGRUM</span>
                             </div>
                         )}
                     </div>
@@ -547,6 +561,27 @@ export default function DashboardPage() {
                                         </div>
                                     )}
 
+                                    {/* Empty State */}
+                                    {!hasData && (
+                                        <div className="bg-amber-50 border border-amber-200 rounded-3xl p-8 text-center">
+                                            <div className="w-16 h-16 mx-auto mb-4 bg-amber-100 rounded-2xl flex items-center justify-center">
+                                                <Icons.Upload />
+                                            </div>
+                                            <h3 className="text-lg font-black text-amber-800 mb-2">No hay datos financieros</h3>
+                                            <p className="text-amber-700 text-sm max-w-md mx-auto">
+                                                Aún no se han cargado registros para este período. 
+                                                Cambia a la vista <strong>Cumplimiento Fiscal</strong> y sube un archivo CSV 
+                                                con los anexos de Hacienda (F07).
+                                            </p>
+                                            <button
+                                                onClick={() => { setPersona('fiscal'); setActiveTab('companies'); }}
+                                                className="mt-6 bg-amber-600 text-white px-6 py-3 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-amber-700 transition-all"
+                                            >
+                                                Ir a Carga de Datos
+                                            </button>
+                                        </div>
+                                    )}
+
                                     {/* Key Indicators Grid */}
                                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
                                         {[
@@ -628,7 +663,7 @@ export default function DashboardPage() {
                                                 <TypesBreakdownChart data={typesData?.gastos || []} type="gastos" />
                                             </div>
                                             <div className="mt-8 space-y-3">
-                                                {typesData?.gastos.slice(0, 3).map((item, i) => (
+                                                {(typesData?.gastos ?? []).slice(0, 3).map((item, i) => (
                                                     <div key={i} className="flex justify-between items-center p-3 bg-zinc-50 rounded-xl">
                                                         <span className="text-[10px] font-black text-zinc-400 uppercase">{item.name}</span>
                                                         <span className="text-sm font-black text-zinc-900">${item.value.toLocaleString()}</span>
@@ -714,6 +749,7 @@ export default function DashboardPage() {
                                                     companies={companiesList}
                                                     onSelectCompany={(company) => setSelectedCompanyForUpload(company)}
                                                     onAddCompany={handleAddCompany}
+                                                    onResetCompany={handleResetCompany}
                                                 />
                                             </div>
                                             <div className="mt-8">
@@ -774,7 +810,7 @@ export default function DashboardPage() {
                                             <div key={i} className={`bg-white border border-zinc-200/60 rounded-3xl p-8 flex items-center justify-between shadow-sm group hover:-translate-y-1 transition-all duration-500 ${stat.bg || ''}`}>
                                                 <div>
                                                     <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-2">{stat.label}</p>
-                                                    <p className={`text-3xl font-black tabular-nums ${stat.color}`}>${stat.val?.toLocaleString()}</p>
+                                                    <p className={`text-3xl font-black tabular-nums ${stat.color}`}>${(stat.val ?? 0).toLocaleString()}</p>
                                                 </div>
                                                 <div className={`w-12 h-12 bg-zinc-100 rounded-2xl flex items-center justify-center text-zinc-400 group-hover:text-white transition-all duration-500 ${persona === 'fiscal' ? 'group-hover:bg-blue-600' : 'group-hover:bg-zinc-900'}`}>
                                                     {Icon && <Icon />}

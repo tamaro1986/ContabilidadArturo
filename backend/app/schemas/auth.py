@@ -22,6 +22,7 @@ class Token(BaseModel):
 class UserResponse(BaseModel):
     id: str
     email: str
+    full_name: Optional[str] = None
     role: Optional[str] = None
     tenant_id: Optional[str] = None
 

@@ -202,7 +202,7 @@ export default function UploadHistoryTable({
                         <div className="text-[10px] font-bold text-zinc-400 uppercase mt-1 flex items-center gap-2">
                           {new Date(record.created_at).toLocaleDateString('es-SV', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
                           <span className="w-1 h-1 rounded-full bg-zinc-200" />
-                          <span className="text-zinc-500 bg-zinc-100 px-2 py-0.5 rounded-md">{record.document_type.replace(/_/g, ' ')}</span>
+                          <span className="text-zinc-500 bg-zinc-100 px-2 py-0.5 rounded-md">{(record.document_type ?? '').replace(/_/g, ' ')}</span>
                         </div>
                       </div>
                     </div>
@@ -224,7 +224,7 @@ export default function UploadHistoryTable({
                   </td>
                   <td className="px-10 py-7">
                     <div className="flex flex-col">
-                      <span className="text-sm font-black text-zinc-900">{record.records_processed.toLocaleString()}</span>
+                      <span className="text-sm font-black text-zinc-900">{(record.records_processed ?? 0).toLocaleString()}</span>
                       <span className="text-[9px] font-bold text-zinc-400 uppercase tracking-wider mt-0.5">Registros</span>
                     </div>
                   </td>

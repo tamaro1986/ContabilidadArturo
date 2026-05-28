@@ -85,3 +85,19 @@ def cache_response(expire: int = 3600):
         return async_wrapper if inspect.iscoroutinefunction(func) else sync_wrapper
     return decorator
 
+def invalidate_tenant_cache(tenant_id: str):
+    """Invalida todo el cache Redis para un tenant específico."""
+    if not redis_client or settings.MOCK_MODE:
+        return
+    try:
+        pattern = f"cache:*:{tenant_id}:*"
+        cursor = 0
+        while True:
+            cursor, keys = redis_client.scan(cursor=cursor, match=pattern, count=100)
+            if keys:
+                redis_client.delete(*keys)
+            if cursor == 0:
+                break
+    except Exception as e:
+        print(f"Error invalidating cache for tenant {tenant_id}: {e}")
+

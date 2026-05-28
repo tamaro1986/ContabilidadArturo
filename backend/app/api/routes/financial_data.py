@@ -1,3 +1,4 @@
+import hashlib
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, BackgroundTasks, Form
 from supabase import Client
 import uuid
@@ -36,9 +37,26 @@ async def upload_financial_data(
     file_ext = "zip" if "zip" in mime_type else "csv"
     safe_filename = f"{tenant_id}/{uuid.uuid4()}.{file_ext}"
     
-    # 2. Subir a Storage
+    # 2. Leer contenido y calcular hash SHA-256 para dedup
+    file_content = await file.read()
+    file_hash = hashlib.sha256(file_content).hexdigest()
+    
+    # Verificar duplicados por hash en la base de datos
+    existing = supabase_admin.table("csv_upload_history")\
+        .select("id")\
+        .eq("tenant_id", tenant_id)\
+        .eq("company_id", company_id)\
+        .eq("file_hash", file_hash)\
+        .execute()
+        
+    if existing.data:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Este archivo ya fue procesado anteriormente para esta empresa."
+        )
+    
+    # 3. Subir a Storage
     try:
-        file_content = await file.read()
         supabase_admin.storage.from_(BUCKET_NAME).upload(
             file=file_content,
             path=safe_filename,
@@ -47,7 +65,7 @@ async def upload_financial_data(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error en Storage: {str(e)}")
     
-    # 3. Registrar Historial en tax_documents y csv_upload_history
+    # 4. Registrar Historial en tax_documents y csv_upload_history
     upload_id = str(uuid.uuid4())
     tax_doc_id = str(uuid.uuid4())
     
@@ -71,6 +89,7 @@ async def upload_financial_data(
             "document_type": document_type,
             "filename": file.filename,
             "file_path": safe_filename,
+            "file_hash": file_hash,
             "status": "processing",
             "uploaded_by": contador_data["user"].id if contador_data.get("user") else None
         }).execute()
@@ -78,7 +97,7 @@ async def upload_financial_data(
         print(f"Error registering upload in DB: {e}")
         raise HTTPException(status_code=500, detail=f"Error al registrar documento o historial: {str(e)}")
 
-    # 4. Encolar Tarea usando BackgroundTasks de FastAPI
+    # 5. Encolar Tarea usando BackgroundTasks de FastAPI
     background_tasks.add_task(
         process_financial_csv,
         bucket_name=BUCKET_NAME,
@@ -86,7 +105,8 @@ async def upload_financial_data(
         tenant_id=tenant_id,
         company_id=company_id,
         upload_id=upload_id,
-        tax_doc_id=tax_doc_id
+        tax_doc_id=tax_doc_id,
+        document_type=document_type
     )
     
     return {
@@ -103,7 +123,7 @@ async def get_upload_history(
     """Retorna el historial de cargas del tenant o de una empresa específica."""
     try:
         query = supabase.table("csv_upload_history")\
-            .select("*, companies(name), user_profiles:uploaded_by(full_name)")\
+            .select("*, companies(name)")\
             .eq("tenant_id", contador_data["tenant_id"])
         
         if company_id:
@@ -116,4 +136,57 @@ async def get_upload_history(
         return {"status": "success", "data": res.data}
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Historial no disponible: {str(e)}")
+
+@router.delete("/uploads/{upload_id}")
+async def delete_upload(
+    upload_id: str,
+    contador_data: dict = Depends(require_contador),
+    supabase_admin: Client = Depends(get_supabase_admin_client)
+):
+    """Elimina una entrada del historial de cargas."""
+    try:
+        res = supabase_admin.table("csv_upload_history")\
+            .delete()\
+            .eq("id", upload_id)\
+            .eq("tenant_id", contador_data["tenant_id"])\
+            .execute()
+        if not res.data:
+            raise HTTPException(status_code=404, detail="Carga no encontrada")
+        return {"status": "success", "message": "Carga eliminada del historial"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al eliminar: {str(e)}")
+
+@router.delete("/company/{company_id}/records")
+async def reset_company_records(
+    company_id: str,
+    contador_data: dict = Depends(require_contador),
+    supabase_admin: Client = Depends(get_supabase_admin_client)
+):
+    """Elimina todos los registros financieros e historial de cargas de una empresa."""
+    try:
+        supabase_admin.table("financial_records")\
+            .delete()\
+            .eq("company_id", company_id)\
+            .eq("tenant_id", contador_data["tenant_id"])\
+            .execute()
+        supabase_admin.table("csv_upload_history")\
+            .delete()\
+            .eq("company_id", company_id)\
+            .eq("tenant_id", contador_data["tenant_id"])\
+            .execute()
+        supabase_admin.table("tax_documents")\
+            .delete()\
+            .eq("company_id", company_id)\
+            .eq("tenant_id", contador_data["tenant_id"])\
+            .execute()
+        supabase_admin.table("companies")\
+            .update({"total_records": 0, "last_processed_month": None})\
+            .eq("id", company_id)\
+            .eq("tenant_id", contador_data["tenant_id"])\
+            .execute()
+        return {"status": "success", "message": "Datos de la empresa reiniciados"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al reiniciar: {str(e)}")
 

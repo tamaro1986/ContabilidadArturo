@@ -8,7 +8,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Arturo | Plataforma de Inteligencia Contable con IA",
+  title: "Integrum | Plataforma de Inteligencia Contable con IA",
   description: "Automatiza la auditoría fiscal, procesa anexos del Ministerio de Hacienda en segundos y entrega dashboards financieros interactivos a tus clientes. Hecho para contadores de El Salvador.",
 };
 

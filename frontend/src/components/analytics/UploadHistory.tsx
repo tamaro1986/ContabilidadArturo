@@ -183,6 +183,7 @@ export default function UploadHistory({
                 <th className="px-10 py-6 text-[9px] font-black text-zinc-400 uppercase tracking-[0.3em]">Responsable</th>
                 <th className="px-10 py-6 text-[9px] font-black text-zinc-400 uppercase tracking-[0.3em]">Volumen</th>
                 <th className="px-10 py-6 text-[9px] font-black text-zinc-400 uppercase tracking-[0.3em]">Estado</th>
+                <th className="px-4 py-6"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-50">
@@ -202,7 +203,7 @@ export default function UploadHistory({
                         <div className="text-[10px] font-bold text-zinc-400 uppercase mt-1 flex items-center gap-2">
                           {new Date(record.created_at).toLocaleDateString('es-SV', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
                           <span className="w-1 h-1 rounded-full bg-zinc-200" />
-                          <span className="text-zinc-500 bg-zinc-100 px-2 py-0.5 rounded-md">{record.document_type.replace(/_/g, ' ')}</span>
+                          <span className="text-zinc-500 bg-zinc-100 px-2 py-0.5 rounded-md">{(record.document_type ?? '').replace(/_/g, ' ')}</span>
                         </div>
                       </div>
                     </div>
@@ -224,12 +225,31 @@ export default function UploadHistory({
                   </td>
                   <td className="px-10 py-7">
                     <div className="flex flex-col">
-                      <span className="text-sm font-black text-zinc-900">{record.records_processed.toLocaleString()}</span>
+                      <span className="text-sm font-black text-zinc-900">{(record.records_processed ?? 0).toLocaleString()}</span>
                       <span className="text-[9px] font-bold text-zinc-400 uppercase tracking-wider mt-0.5">Registros</span>
                     </div>
                   </td>
                   <td className="px-10 py-7">
                     {getStatusBadge(record)}
+                  </td>
+                  <td className="px-4 py-7">
+                    <button
+                      onClick={async () => {
+                        if (!confirm('¿Eliminar esta carga del historial?')) return;
+                        try {
+                          await fetchWithAuth(`/financial/uploads/${record.id}`, { method: 'DELETE' });
+                          fetchHistory();
+                        } catch (e: any) {
+                          alert('Error al eliminar: ' + e.message);
+                        }
+                      }}
+                      className="text-zinc-300 hover:text-red-500 transition-colors p-1"
+                      title="Eliminar del historial"
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                      </svg>
+                    </button>
                   </td>
                 </tr>
               ))}

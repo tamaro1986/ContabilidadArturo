@@ -29,16 +29,16 @@ class Settings(BaseSettings):
     
     # Seguridad (CORS)
     CORS_ORIGINS: List[str] = [
+        "https://contabilidadarturo.vercel.app",
         "https://contabilidad-arturo.vercel.app",
-        "https://contabilidad-arturo-git-main-tamaro1986s-projects.vercel.app",
         "http://localhost:3000",
+        "http://localhost:3001",
         "http://127.0.0.1:3000",
-        "http://[::1]:3000",
+        "http://127.0.0.1:3001",
         "http://localhost:8000",
     ]
     
-    # ESTA ES LA VARIABLE QUE FALTABA Y CAUSABA EL ERROR
-    CORS_ORIGIN_REGEX: str = r"https://contabilidad-arturo.*\.vercel\.app"
+    CORS_ORIGIN_REGEX: str = r"https://contabilidad-?arturo.*\.vercel\.app"
 
     # AI / RAG Configuration
     OPENAI_API_KEY: str = ""

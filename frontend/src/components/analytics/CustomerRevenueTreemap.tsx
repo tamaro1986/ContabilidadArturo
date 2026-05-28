@@ -41,8 +41,8 @@ const CustomerRevenueTreemap: React.FC<CustomerRevenueTreemapProps> = ({
     const nodes: TreemapNode[] = topClients.map(c => ({
         id: c.id,
         nombre: c.nombre,
-        valor: c.gananciaHistorica,
-        pct: (c.gananciaHistorica / totalRevenue) * 100,
+        valor: c.gananciaHistorica ?? 0,
+        pct: totalRevenue > 0 ? ((c.gananciaHistorica ?? 0) / totalRevenue) * 100 : 0,
         estado: c.estado,
         raw: c
     }));
@@ -52,8 +52,8 @@ const CustomerRevenueTreemap: React.FC<CustomerRevenueTreemapProps> = ({
             id: 'others',
             nombre: 'Otros Clientes',
             valor: othersRevenue,
-            pct: (othersRevenue / totalRevenue) * 100,
-            estado: 'zinc', // Bloque consolidado "Otros"
+            pct: totalRevenue > 0 ? (othersRevenue / totalRevenue) * 100 : 0,
+            estado: 'zinc',
             raw: null
         });
     }
@@ -61,6 +61,21 @@ const CustomerRevenueTreemap: React.FC<CustomerRevenueTreemapProps> = ({
     // 4. Agrupar en filas (Heurística simple para mantener bloques legibles)
     // Fila 1: Los dos más grandes (o el más grande si es > 50%)
     // Fila 2: El resto
+    if (nodes.length === 0 || totalRevenue === 0) {
+        return (
+            <div className="w-full h-96 flex flex-col items-center justify-center rounded-2xl bg-zinc-50 text-zinc-400">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="mb-4 opacity-50">
+                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                    <circle cx="9" cy="7" r="4"/>
+                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                    <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                </svg>
+                <p className="text-sm font-medium">Sin datos de clientes</p>
+                <p className="text-xs mt-1 opacity-70">Sube archivos fiscales para ver el análisis</p>
+            </div>
+        );
+    }
+
     const firstRowNodes = nodes.slice(0, nodes[0].pct > 50 ? 1 : 2);
     const secondRowNodes = nodes.slice(firstRowNodes.length);
 
@@ -92,9 +107,9 @@ const CustomerRevenueTreemap: React.FC<CustomerRevenueTreemapProps> = ({
                 className="flex gap-1 transition-all duration-500" 
                 style={{ height: `${firstRowPct}%` }}
             >
-                {firstRowNodes.map((node) => (
+                {firstRowNodes.map((node, i) => (
                     <div
-                        key={node.id}
+                        key={node.id ?? i}
                         onClick={() => node.raw && onSelectCustomer?.(node.raw)}
                         className={`
                             relative p-4 flex flex-col justify-between 
@@ -134,9 +149,9 @@ const CustomerRevenueTreemap: React.FC<CustomerRevenueTreemapProps> = ({
                     className="flex gap-1 transition-all duration-500" 
                     style={{ height: `${secondRowPct}%` }}
                 >
-                    {secondRowNodes.map((node) => (
+                    {secondRowNodes.map((node, i) => (
                         <div
-                            key={node.id}
+                            key={node.id ?? `sec-${i}`}
                             onClick={() => node.raw && onSelectCustomer?.(node.raw)}
                             className={`
                                 relative p-3 flex flex-col justify-between 

@@ -1,77 +1,114 @@
 import duckdb
 import logging
+import re
+import psycopg2
+import psycopg2.extras
 from urllib.parse import urlparse, unquote
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
+#
+# ── DuckDB (Modo Simulación / MOCK_MODE) ──────────────────────────────────────
+#
+
 # Conexión en memoria de DuckDB (instancia global compartida)
-con = duckdb.connect(database=':memory:')
-_initialized = False
+duckdb_con = duckdb.connect(database=':memory:')
+mock_con = None          # Poblada por mock_data.py en el arranque
 
-# Variable global para el modo simulación
-mock_con = None
+#
+# ── PgClient Wrapper (Modo Producción) ────────────────────────────────────────
+# Proporciona la misma API que DuckDB (.execute().fetchall(), .description)
+# para que los endpoints de analytics no requieran cambios.
+#
 
-def get_duckdb_client() -> duckdb.DuckDBPyConnection:
-    """
-    Retorna la conexión de DuckDB. En MOCK_MODE usa la instancia mock_con si está disponible.
-    """
-    if settings.MOCK_MODE and mock_con:
-        return mock_con
+class PgClient:
+    """Wrapper de psycopg2 que imita la API de conexión DuckDB."""
+    def __init__(self):
+        self._conn = None
+        self._cur = None
+        self.description = None
 
-    global _initialized
-    if not _initialized:
-        try:
-            # 1. Instalar y cargar extensión
-            con.execute("INSTALL postgres;")
-            con.execute("LOAD postgres;")
-            
-            # 2. Parseo de URL (DATABASE_URL o DIRECT_URL)
+    def _ensure_conn(self):
+        if self._conn is None or self._conn.closed:
             db_url = settings.DATABASE_URL or settings.DIRECT_URL
-            parsed = urlparse(db_url)
-            
-            hostname = parsed.hostname
-            port = parsed.port or 5432
-            username = unquote(parsed.username) if parsed.username else "postgres"
-            password = unquote(parsed.password) if parsed.password else ""
-            
-            logger.info(f"Iniciando conexión HTAP a {hostname}:{port}")
+            self._conn = psycopg2.connect(db_url)
+            self._conn.autocommit = True
+        return self._conn
 
-            # Intentar desvincular 'pg' si ya existe para evitar conflictos
-            try:
-                con.execute("DETACH pg")
-            except Exception:
-                pass
-            
-            # 3. Crear Secreto
-            safe_password = password.replace("'", "''")
-            con.execute(f"""
-                CREATE OR REPLACE TEMPORARY SECRET supabase_pg (
-                    TYPE POSTGRES,
-                    HOST '{hostname}',
-                    PORT {port},
-                    DATABASE 'postgres',
-                    USER '{username}',
-                    PASSWORD '{safe_password}'
-                );
-            """)
-            
-            # 4. Adjuntar catálogo (Usar try-except por si acaso)
-            try:
-                con.execute("ATTACH '' AS pg (TYPE POSTGRES, SECRET supabase_pg);")
-            except Exception as ae:
-                if "already exists" in str(ae):
-                    logger.info("El catálogo 'pg' ya estaba adjunto.")
-                else:
-                    raise ae
-            
-            # Verificación rápida
-            con.execute("SELECT 1").fetchall()
-                
-            _initialized = True
-            logger.info("DuckDB HTAP inicializado correctamente.")
-        except Exception as e:
-            logger.error(f"CRITICAL: Error en DuckDB: {str(e)}")
-            raise RuntimeError(f"Fallo en motor analítico: {str(e)}")
+    def execute(self, sql: str, params: list = None):
+        conn = self._ensure_conn()
+        self._cur = conn.cursor()
+        # Convertir placeholders DuckDB (?) a psycopg2 (%s)
+        if params is not None and "?" in sql:
+            sql = self._convert_placeholders(sql)
+        # Eliminar prefijo pg. (DuckDB Postgres extension) para PostgreSQL directo
+        sql = self._strip_pg_prefix(sql)
+        try:
+            self._cur.execute(sql, params)
+        except Exception:
+            self.close()
+            raise
+        self.description = self._cur.description
+        return self
 
-    return con
+    @staticmethod
+    def _strip_pg_prefix(sql: str) -> str:
+        """Reemplaza pg.public. por public. (DuckDB → PostgreSQL)."""
+        return sql.replace('pg.public.', 'public.')
+
+    @staticmethod
+    def _convert_placeholders(sql: str) -> str:
+        """Reemplaza ? por %s respetando strings literales."""
+        result = []
+        in_string = False
+        quote_char = None
+        i = 0
+        while i < len(sql):
+            ch = sql[i]
+            if in_string:
+                result.append(ch)
+                if ch == quote_char and (i == 0 or sql[i-1] != '\\'):
+                    in_string = False
+            elif ch in ("'", '"'):
+                in_string = True
+                quote_char = ch
+                result.append(ch)
+            elif ch == '?':
+                result.append('%s')
+            else:
+                result.append(ch)
+            i += 1
+        return ''.join(result)
+
+    def fetchall(self) -> list:
+        return self._cur.fetchall() if self._cur else []
+
+    def fetchone(self):
+        return self._cur.fetchone() if self._cur else None
+
+    def close(self):
+        if self._cur and not self._cur.closed:
+            self._cur.close()
+            self._cur = None
+        if self._conn and not self._conn.closed:
+            self._conn.close()
+            self._conn = None
+
+
+#
+# ── Selector de cliente según modo ────────────────────────────────────────────
+#
+
+def get_duckdb_client():
+    """
+    Retorna un cliente de base de datos con API unificada.
+    - MOCK_MODE=True  → DuckDB en memoria (pre-poblado por mock_data.py)
+    - MOCK_MODE=False → PostgreSQL vía psycopg2 (PgClient wrapper)
+    """
+    if settings.MOCK_MODE:
+        if mock_con:
+            return mock_con
+        return duckdb_con
+
+    return PgClient()

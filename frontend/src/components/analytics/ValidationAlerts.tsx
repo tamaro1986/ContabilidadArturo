@@ -34,7 +34,37 @@ export default function ValidationAlerts({
 }: ValidationAlertsProps) {
   if (!result) return null;
 
+  const handleDownloadErrors = () => {
+    if (!result || result.errors.length === 0) return;
+
+    const headers = ['Tipo', 'Severidad', 'Linea', 'Columna', 'Mensaje'];
+    const rows = result.errors.map(err => [
+      err.code,
+      err.severity,
+      err.line || 'N/A',
+      err.column || 'N/A',
+      `"${err.message.replace(/"/g, '""')}"`
+    ]);
+
+    const csvContent = [headers, ...rows].map(e => e.join(",")).join("\n");
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `errores_${result.fileName}`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   if (result.isValid) {
+    const isDuplicate = processingError && (
+      processingError.toLowerCase().includes("ya fue procesado") || 
+      processingError.toLowerCase().includes("duplicate") || 
+      processingError.toLowerCase().includes("409")
+    );
+
     return (
       <div className="bg-emerald-50 border border-emerald-200 rounded-[2.5rem] p-12 flex flex-col items-center justify-center text-center animate-in fade-in zoom-in-95 duration-500">
         <div className="w-24 h-24 bg-emerald-500 rounded-full flex items-center justify-center text-white shadow-xl shadow-emerald-500/30 mb-8">
@@ -46,13 +76,31 @@ export default function ValidationAlerts({
         </p>
         
         {processingError && (
-          <div className="w-full max-w-lg mb-8 p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-start gap-4 text-left">
-            <div className="text-rose-500 mt-1"><Icons.XCircle /></div>
-            <div>
-              <h4 className="text-rose-900 font-bold text-sm">Error al procesar la carga</h4>
-              <p className="text-rose-700 text-sm mt-1">{processingError}</p>
+          isDuplicate ? (
+            <div className="w-full max-w-lg mb-8 p-6 bg-amber-50 border border-amber-200 rounded-3xl flex items-start gap-4 text-left shadow-lg shadow-amber-500/5 animate-in fade-in slide-in-from-bottom-2 duration-300">
+              <div className="text-amber-600 mt-1">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+              </div>
+              <div className="flex-1">
+                <h4 className="text-amber-900 font-black text-sm uppercase tracking-widest">Archivo ya procesado</h4>
+                <p className="text-amber-800 text-sm mt-1 font-medium leading-relaxed">
+                  Este documento CSV ya fue cargado anteriormente para esta empresa. No es necesario volver a procesarlo.
+                </p>
+                <div className="mt-4 flex items-center gap-3">
+                  <span className="text-[10px] font-black text-amber-700/80 uppercase bg-amber-100 px-2.5 py-1 rounded-md">Conflicto 409</span>
+                  <span className="text-[10px] font-bold text-zinc-500 uppercase">Verifícalo en el historial abajo</span>
+                </div>
+              </div>
             </div>
-          </div>
+          ) : (
+            <div className="w-full max-w-lg mb-8 p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-start gap-4 text-left">
+              <div className="text-rose-500 mt-1"><Icons.XCircle /></div>
+              <div>
+                <h4 className="text-rose-900 font-bold text-sm">Error al procesar la carga</h4>
+                <p className="text-rose-700 text-sm mt-1">{processingError}</p>
+              </div>
+            </div>
+          )
         )}
 
         <div className="flex gap-8 mb-10">
@@ -110,14 +158,25 @@ export default function ValidationAlerts({
             <p className="text-sm font-medium text-red-700/80">Se encontraron inconsistencias en {result.fileName}</p>
           </div>
         </div>
-        <button 
-          onClick={onRetry}
-          disabled={isProcessing}
-          className="bg-white border border-red-200 text-red-700 px-6 py-3 rounded-xl text-xs font-black uppercase tracking-widest flex items-center gap-3 hover:bg-red-50 transition-colors disabled:opacity-50"
-        >
-          <Icons.Refresh />
-          Reintentar
-        </button>
+        <div className="flex gap-3">
+          {rowErrors.length > 0 && (
+            <button 
+              onClick={handleDownloadErrors}
+              className="bg-white border border-zinc-200 text-zinc-700 px-6 py-3 rounded-xl text-xs font-black uppercase tracking-widest flex items-center gap-3 hover:bg-zinc-50 transition-colors"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              Exportar Errores
+            </button>
+          )}
+          <button 
+            onClick={onRetry}
+            disabled={isProcessing}
+            className="bg-white border border-red-200 text-red-700 px-6 py-3 rounded-xl text-xs font-black uppercase tracking-widest flex items-center gap-3 hover:bg-red-50 transition-colors disabled:opacity-50"
+          >
+            <Icons.Refresh />
+            Reintentar
+          </button>
+        </div>
       </div>
 
       <div className="p-8 space-y-8">
@@ -171,3 +230,4 @@ export default function ValidationAlerts({
     </div>
   );
 }
+

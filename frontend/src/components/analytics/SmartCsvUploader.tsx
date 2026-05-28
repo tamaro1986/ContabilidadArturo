@@ -30,10 +30,17 @@ export default function SmartCsvUploader({ company, onValidationComplete, onBack
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const annexTypes: { id: AnnexUploadType; label: string; cols: number; form: string }[] = [
-    { id: 'ventas-contribuyentes', label: 'Ventas a Contribuyentes', cols: 19, form: 'F07' },
-    { id: 'ventas-consumidor', label: 'Ventas Consumidor Final', cols: 19, form: 'F07' },
-    { id: 'compras', label: 'Compras', cols: 20, form: 'F07' },
+    { id: 'ventas-contribuyentes', label: 'Ventas a Contribuyentes', cols: 20, form: 'F07' },
+    { id: 'ventas-consumidor', label: 'Ventas Consumidor Final', cols: 23, form: 'F07' },
+    { id: 'compras', label: 'Compras', cols: 21, form: 'F07' },
   ];
+
+  // Plantillas de encabezados para CSVs de Hacienda sin headers (formato LIBRO)
+  const LIBRO_TEMPLATES: Record<string, string> = {
+    'ventas-contribuyentes': 'FECHA_EMISION,CLASE_DOC,TIPO_DOC,NUM_RESOLUCION,SERIE,NUM_DOC,NUM_CONTROL,NIT_CLIENTE,NOMBRE_CLIENTE,VENTAS_EXENTAS,VENTAS_NO_SUJETAS,VENTAS_GRAVADAS,DEBITO_FISCAL,VENTAS_TERCEROS,DEBITO_TERCEROS,TOTAL_VENTA,DUI_CLIENTE,TIPO_OPERACION,TIPO_INGRESO,NUM_ANEXO',
+    'ventas-consumidor': 'FECHA_EMISION,CLASE_DOC,TIPO_DOC,NUM_RESOLUCION,SERIE,NUM_CONTROL_DESDE,NUM_CONTROL_HASTA,NUM_DOC_DESDE,NUM_DOC_HASTA,NUM_MAQUINA,VENTAS_EXENTAS,VENTAS_INTERNAS_EXENTAS,VENTAS_NO_SUJETAS,VENTAS_GRAVADAS,EXPORTACIONES_CENTROAMERICA,EXPORTACIONES_FUERA_CENTROAMERICA,EXPORTACIONES_SERVICIO,VENTAS_ZONAS_FRANCAS,VENTAS_TERCEROS,TOTAL_VENTAS,TIPO_OPERACION,TIPO_INGRESO,NUM_ANEXO',
+    'compras': 'FECHA_EMISION,CLASE_DOC,TIPO_DOC,NUM_DOC,NIT_PROVEEDOR,NOMBRE_PROVEEDOR,COMPRAS_INTERNAS_EXENTAS,INTERNACIONES_EXENTAS,IMPORTACIONES_EXENTAS,COMPRAS_INTERNAS_GRAVADAS,INTERNACIONES_GRAVADAS,IMPORTACIONES_GRAVADAS_BIENES,IMPORTACIONES_GRAVADAS_SERVICIOS,CREDITO_FISCAL,TOTAL_COMPRAS,DUI_PROVEEDOR,TIPO_OPERACION,CLASIFICACION,SECTOR,TIPO_COSTO_GASTO,NUM_ANEXO',
+  };
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -58,6 +65,20 @@ export default function SmartCsvUploader({ company, onValidationComplete, onBack
     }
   };
 
+  const handleDownloadTemplate = (typeId: AnnexUploadType) => {
+    const template = LIBRO_TEMPLATES[typeId] || LIBRO_TEMPLATES['ventas-contribuyentes'];
+    const csvContent = template + '\n';
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `plantilla_${typeId}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const validateFile = (file: File) => {
     setIsProcessing(true);
     
@@ -76,8 +97,6 @@ export default function SmartCsvUploader({ company, onValidationComplete, onBack
       return;
     }
 
-    const expectedCols = annexTypes.find(t => t.id === selectedType)?.cols || 0;
-
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
@@ -86,90 +105,152 @@ export default function SmartCsvUploader({ company, onValidationComplete, onBack
           throw new Error("El archivo está vacío o no pudo leerse.");
         }
         
-        const lines = text.split('\n').filter(line => line.trim() !== '');
+        const rawLines = text.split('\n');
+        const lines = rawLines.map(l => l.trim()).filter(line => line !== '');
         
         const errors: ValidationError[] = [];
         const warnings: ValidationWarning[] = [];
 
         if (lines.length > 0) {
-          const separator = lines[0].includes(';') ? ';' : ',';
+          // Detectar separador: probar cual da mas columnas
+          const sepCandidates = [',', ';', '\t', '|'];
+          let separator = ',';
+          let maxCols = 0;
+          for (const sep of sepCandidates) {
+            const cols = lines[0].split(sep).length;
+            if (cols > maxCols) {
+              maxCols = cols;
+              separator = sep;
+            }
+          }
+          const firstRowCols = lines[0].split(separator);
+          const typeConfig = annexTypes.find(t => t.id === selectedType);
+          const expectedCols = typeConfig?.cols || 0;
+
+          // Detectar CSVs sin encabezados (formato LIBRO de Hacienda)
+          const headerKeywords = ['FECHA', 'TIPO', 'DOC', 'NIT', 'NOMBRE', 'CLIENTE', 'PROVEEDOR', 'GRAVADA', 'EXENTA', 'DEBITO'];
+          const hasHeaders = firstRowCols.some(c => headerKeywords.some(k => c.toUpperCase().includes(k)));
+          if (!hasHeaders) {
+            const template = LIBRO_TEMPLATES[selectedType];
+            if (template) {
+              // Usar el mismo separador que el archivo
+              lines.unshift(template.split(',').join(separator));
+              warnings.push({
+                code: 'NO_HEADERS',
+                message: 'El archivo no contiene encabezados. Se ha aplicado la plantilla de columnas Hacienda automáticamente.'
+              });
+            }
+          }
+
           const headers = lines[0].split(separator);
-          const expectedCols = annexTypes.find(t => t.id === selectedType)?.cols || 0;
-          
-          if (headers.length !== expectedCols) {
+
+          if (headers.length < expectedCols) {
             const suggestedType = annexTypes.find(t => t.cols === headers.length);
             let extraMsg = '';
             if (suggestedType) {
               extraMsg = ` ¿Quisiste decir "${suggestedType.label}"?`;
             }
-            
+
             errors.push({
               code: 'COLUMNS_MISMATCH',
               severity: 'structural',
-              message: `Error Estructural: El archivo tiene ${headers.length} columnas, pero el tipo seleccionado "${selectedType}" requiere ${expectedCols}.${extraMsg}`
+              message: `Error Estructural: El archivo tiene ${headers.length} columnas, pero el tipo seleccionado "${selectedType}" requiere al menos ${expectedCols}.${extraMsg}`
             });
           }
 
-          // Mock Row-level validation on lines 1-10
-          for (let i = 1; i < Math.min(lines.length, 10); i++) {
+          // Mejoramos la detección de columnas usando nombres de encabezados
+          const findColIndex = (keywords: string[]) => {
+            return headers.findIndex(h => keywords.some(k => h.toUpperCase().includes(k)));
+          };
+
+          const dateColIndex = findColIndex(['FECHA']);
+          const isConsumidor = selectedType === 'ventas-consumidor';
+          const idColIndex = isConsumidor ? findColIndex(['DUI', 'IDENTIFICACION']) : findColIndex(['NIT', 'NRC']);
+          const totalColIndex = findColIndex(['TOTAL', 'MONTO', 'VALOR']);
+
+          // Fallbacks por defecto
+          const finalDateCol = dateColIndex !== -1 ? dateColIndex : 6;
+          const finalIdCol = idColIndex !== -1 ? idColIndex : (isConsumidor ? 8 : 7);
+          const finalTotalCol = totalColIndex !== -1 ? totalColIndex : 13;
+
+          // Escaneamos hasta 500 filas para una validación más profunda en archivos grandes
+          const rowsToScan = Math.min(lines.length, 500);
+          for (let i = 1; i < rowsToScan; i++) {
             const cols = lines[i].split(separator);
+            if (cols.length <= 1) continue; 
             
-            // El formato de Hacienda para estos anexos usualmente tiene la fecha en la columna 7 (index 6)
-            // NIT_RECEPTOR,NRC_RECEPTOR,ANIO,MES,TIPO_DOC,NUM_DOC,FECHA_EMISION...
-            const dateColIndex = 6; 
-            
-            if (cols.length > dateColIndex) {
-              const dateValue = cols[dateColIndex].trim();
-              const dateRegex = /^\d{2}\/\d{2}\/\d{4}$/;
+            // Validación de Fecha
+            if (cols.length > finalDateCol) {
+              const dateValue = cols[finalDateCol].trim();
+              const dateRegex = /^(\d{1,2}\/\d{1,2}\/\d{4})|(\d{4}-\d{1,2}-\d{1,2})$/;
               
               if (dateValue !== '' && !dateRegex.test(dateValue)) {
                 errors.push({
                   code: 'INVALID_DATE_FORMAT',
                   severity: 'row-level',
-                  message: `Línea ${i + 1}: El formato de fecha en la columna ${dateColIndex + 1} debe ser DD/MM/AAAA.`,
+                  message: `Línea ${i + 1}: El formato de fecha "${dateValue}" es inválido. Use DD/MM/AAAA.`,
                   line: i + 1,
-                  column: (dateColIndex + 1).toString()
+                  column: (finalDateCol + 1).toString()
                 });
               }
             }
             
-            // Validación de Identificación (NIT o DUI)
-            // Ventas Contribuyente: NIT en col 8 (index 7)
-            // Compras: NIT en col 8 (index 7)
-            // Ventas Consumidor: DUI en col 9 (index 8)
-            const isConsumidor = selectedType === 'ventas-consumidor';
-            const idColIndex = isConsumidor ? 8 : 7;
-            
-            if (cols.length > idColIndex) {
-              const idRaw = cols[idColIndex].trim();
+              // Validación de Identificación (NIT o DUI)
+            if (cols.length > finalIdCol) {
+              const idRaw = cols[finalIdCol].trim();
               const idClean = idRaw.replace(/\D/g, '');
               
-              if (idRaw !== '') {
+              // Ignorar UUIDs (contienen guiones) o valores nulos/falsos
+              const isUuid = idRaw.includes('-');
+              const isValidIdentifier = idRaw !== '' && idRaw.toUpperCase() !== 'N/A' && idRaw.toUpperCase() !== 'DESCONOCIDO' && idRaw !== '0' && !isUuid;
+
+              if (isValidIdentifier) {
                 if (isConsumidor) {
                   // Validación DUI (9 dígitos)
-                  if (idClean.length !== 9) {
+                  if (idClean.length !== 9 && idClean.length !== 0) {
                     errors.push({
                       code: 'INVALID_DUI',
                       severity: 'row-level',
                       message: `Línea ${i + 1}: El DUI "${idRaw}" no es válido. Se esperan 9 dígitos.`,
                       line: i + 1,
-                      column: (idColIndex + 1).toString()
+                      column: (finalIdCol + 1).toString()
                     });
                   }
                 } else {
-                  // Validación NIT (14 dígitos)
-                  if (idClean.length !== 14) {
+                  // Validación NIT (6-14 dígitos: permitimos desde 6 dígitos)
+                  if ((idClean.length < 6 || idClean.length > 14) && idClean.length !== 0) {
                     errors.push({
                       code: 'INVALID_NIT',
                       severity: 'row-level',
-                      message: `Línea ${i + 1}: El NIT "${idRaw}" no es válido. Se esperan 14 dígitos.`,
+                      message: `Línea ${i + 1}: El NIT "${idRaw}" no es válido. Se esperan 6-14 dígitos.`,
                       line: i + 1,
-                      column: (idColIndex + 1).toString()
+                      column: (finalIdCol + 1).toString()
                     });
                   }
                 }
               }
             }
+
+            // Validación de Monto Total (Debe ser numérico)
+            if (cols.length > finalTotalCol) {
+              const totalRaw = cols[finalTotalCol].trim().replace(',', '');
+              if (totalRaw !== '' && isNaN(Number(totalRaw))) {
+                errors.push({
+                  code: 'INVALID_AMOUNT',
+                  severity: 'row-level',
+                  message: `Línea ${i + 1}: El monto "${cols[finalTotalCol]}" no es un número válido.`,
+                  line: i + 1,
+                  column: (finalTotalCol + 1).toString()
+                });
+              }
+            }
+          }
+
+          if (lines.length > 500) {
+            warnings.push({
+              code: 'PARTIAL_SCAN',
+              message: `El archivo es grande. Se validaron las primeras 500 de ${lines.length - 1} filas.`
+            });
           }
         }
 
@@ -185,7 +266,7 @@ export default function SmartCsvUploader({ company, onValidationComplete, onBack
             detectedType: selectedType,
             file: file
           });
-        }, 1500); // Mock processing delay
+        }, 1200); 
         
       } catch (err: any) {
         console.error("Error validando el CSV:", err);
@@ -238,7 +319,16 @@ export default function SmartCsvUploader({ company, onValidationComplete, onBack
 
       {/* Selector de Tipo de Anexo */}
       <div className="space-y-4">
-        <h3 className="text-sm font-black text-zinc-900 uppercase tracking-widest">Paso 1: Seleccionar Tipo de Anexo</h3>
+        <div className="flex justify-between items-center">
+          <h3 className="text-sm font-black text-zinc-900 uppercase tracking-widest">Paso 1: Seleccionar Tipo de Anexo</h3>
+          <button 
+            onClick={() => handleDownloadTemplate(selectedType)}
+            className="text-[10px] font-black text-emerald-600 uppercase tracking-widest hover:underline flex items-center gap-2"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Descargar Plantilla {selectedType.split('-')[0]}
+          </button>
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {annexTypes.map((type) => (
             <button
@@ -282,7 +372,7 @@ export default function SmartCsvUploader({ company, onValidationComplete, onBack
             onDrop={handleDrop}
             onClick={() => fileInputRef.current?.click()}
             className={`w-full h-80 rounded-[2.5rem] border-2 border-dashed flex flex-col items-center justify-center cursor-pointer transition-all duration-300 group
-              ${isDragging ? 'border-emerald-500 bg-emerald-50/50' : 'border-zinc-300 bg-white hover:border-emerald-500 hover:bg-emerald-50/20'}`}
+              ${isDragging ? 'border-emerald-500 bg-emerald-50/50 shadow-2xl shadow-emerald-500/10' : 'border-zinc-300 bg-white hover:border-emerald-500 hover:bg-emerald-50/20'}`}
           >
             <input 
               type="file" 
@@ -295,7 +385,7 @@ export default function SmartCsvUploader({ company, onValidationComplete, onBack
               <Icons.Upload />
             </div>
             <p className="text-lg font-black text-zinc-900 mb-2">Arrastra tu archivo CSV aquí</p>
-            <p className="text-sm font-medium text-zinc-500">o haz clic para explorar tus archivos</p>
+            <p className="text-sm font-medium text-zinc-500 uppercase tracking-widest text-[10px] font-black">o haz clic para explorar tus archivos</p>
           </div>
         )}
       </div>

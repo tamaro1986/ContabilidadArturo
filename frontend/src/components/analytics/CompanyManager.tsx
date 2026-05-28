@@ -6,6 +6,7 @@ interface CompanyManagerProps {
   companies: Company[];
   onSelectCompany: (company: Company) => void;
   onAddCompany: (name: string, nit: string) => void;
+  onResetCompany?: (company: Company) => void;
   isLoading?: boolean;
   error?: string | null;
 }
@@ -29,6 +30,7 @@ export default function CompanyManager({
   companies, 
   onSelectCompany, 
   onAddCompany,
+  onResetCompany,
   isLoading = false,
   error = null
 }: CompanyManagerProps) {
@@ -147,12 +149,23 @@ export default function CompanyManager({
                 </div>
               </div>
               
-              <button 
-                onClick={() => onSelectCompany(company)}
-                className="w-full py-3 rounded-xl bg-zinc-50 text-zinc-600 text-xs font-black uppercase tracking-widest hover:bg-zinc-900 hover:text-white transition-all"
-              >
-                Gestionar Anexos
-              </button>
+              <div className="flex gap-2">
+                <button 
+                  onClick={() => onSelectCompany(company)}
+                  className="flex-1 py-3 rounded-xl bg-zinc-50 text-zinc-600 text-xs font-black uppercase tracking-widest hover:bg-zinc-900 hover:text-white transition-all"
+                >
+                  Gestionar Anexos
+                </button>
+                {onResetCompany && company.totalRecords > 0 && (
+                  <button 
+                    onClick={() => onResetCompany(company)}
+                    className="px-4 py-3 rounded-xl bg-red-50 text-red-600 text-xs font-black uppercase tracking-widest hover:bg-red-600 hover:text-white transition-all"
+                    title="Eliminar todos los datos de esta empresa"
+                  >
+                    Resetear
+                  </button>
+                )}
+              </div>
             </div>
           ))
         )}

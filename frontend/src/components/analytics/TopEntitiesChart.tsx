@@ -27,7 +27,7 @@ export default function TopEntitiesChart({ title, data, color }: { title: string
 
     const processedBars = data.map((d, i) => {
       const width = ((d.total_amount || 0) / maxVal) * barMaxW;
-      const displayLabel = d.nit_dui ? (d.nit_dui.length > 12 ? d.nit_dui.substring(0, 10) + "..." : d.nit_dui) : "N/A";
+      const displayLabel = d.nit_dui ? (d.nit_dui.length > 12 ? (d.nit_dui ?? '').substring(0, 10) + "..." : d.nit_dui) : "N/A";
       return {
         ...d,
         y: i * rowHeight + 10,
