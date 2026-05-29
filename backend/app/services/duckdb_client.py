@@ -32,6 +32,8 @@ class PgClient:
     def _ensure_conn(self):
         if self._conn is None or self._conn.closed:
             db_url = settings.DATABASE_URL or settings.DIRECT_URL
+            if not db_url:
+                raise RuntimeError("DATABASE_URL or DIRECT_URL is not configured on the server.")
             self._conn = psycopg2.connect(db_url)
             self._conn.autocommit = True
         return self._conn
