@@ -27,6 +27,12 @@ class RoleChecker:
         request: Request,
         supabase: Client = Depends(get_supabase_client)
     ):
+        if supabase is None:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Supabase client is not configured on the server. Check SUPABASE_URL and SUPABASE_KEY/SUPABASE_ANON_KEY."
+            )
+
         mock_tenant_id = get_tenant_from_request(request)
         if mock_tenant_id:
             return {"user": None, "tenant_id": mock_tenant_id, "role": "administrador"}

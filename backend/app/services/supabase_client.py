@@ -3,7 +3,7 @@ from app.core.config import settings
 
 def get_supabase_client() -> Client:
     url: str = settings.SUPABASE_URL
-    key: str = settings.SUPABASE_KEY
+    key: str = settings.SUPABASE_KEY or settings.SUPABASE_ANON_KEY
     if not url or not key: return None
     return create_client(url, key)
 

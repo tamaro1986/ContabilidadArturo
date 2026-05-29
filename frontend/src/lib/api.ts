@@ -4,6 +4,25 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/a
 
 const FETCH_TIMEOUT_MS = 60000;
 
+let activeRefreshPromise: Promise<any> | null = null;
+
+async function getSharedRefreshSession() {
+  if (activeRefreshPromise) {
+    console.log('[Auth] Reutilizando promesa de refresh activa...');
+    return activeRefreshPromise;
+  }
+  console.log('[Auth] Iniciando refresh de sesión compartido...');
+  activeRefreshPromise = supabase.auth.refreshSession().then((result) => {
+    return result;
+  }).catch((err) => {
+    console.error('[Auth] Error de red o excepción durante refreshSession:', err);
+    return { data: { session: null }, error: err };
+  }).finally(() => {
+    activeRefreshPromise = null;
+  });
+  return activeRefreshPromise;
+}
+
 export async function fetchWithAuth(endpoint: string, options: RequestInit = {}) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
@@ -25,9 +44,9 @@ export async function fetchWithAuth(endpoint: string, options: RequestInit = {})
       
       if (expiresAt && (expiresAt - now) < 60) {
         console.log('[Auth] Token próximo a expirar, refrescando sesión...');
-        const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
+        const { data: refreshData, error: refreshError } = await getSharedRefreshSession();
         
-        if (refreshError || !refreshData.session) {
+        if (refreshError || !refreshData?.session) {
           console.error('[Auth] No se pudo refrescar la sesión:', refreshError?.message);
           if (typeof window !== 'undefined') {
             window.location.href = '/login';
@@ -70,9 +89,9 @@ export async function fetchWithAuth(endpoint: string, options: RequestInit = {})
 
     if (response.status === 401) {
       console.warn('[Auth] Backend rechazó el token (401). Intentando refresh...');
-      const { data: retryData, error: retryError } = await supabase.auth.refreshSession();
+      const { data: retryData, error: retryError } = await getSharedRefreshSession();
       
-      if (retryError || !retryData.session) {
+      if (retryError || !retryData?.session) {
         console.error('[Auth] Refresh falló. Redirigiendo a login.');
         if (typeof window !== 'undefined') {
           window.location.href = '/login';
