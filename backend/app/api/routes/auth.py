@@ -157,12 +157,22 @@ def get_me(
     try:
         profile_res = supabase.table("user_profiles").select("*").eq("id", current_user.id).single().execute()
         profile = profile_res.data
+        
+        # Obtener información del tenant para saber si está expirado
+        tenant_id = profile.get("tenant_id")
+        trial_ends_at = None
+        if tenant_id:
+            tenant_res = supabase.table("tenants").select("trial_ends_at").eq("id", tenant_id).single().execute()
+            if tenant_res.data:
+                trial_ends_at = tenant_res.data.get("trial_ends_at")
+
         return {
             "id": current_user.id,
             "email": current_user.email,
             "full_name": profile.get("full_name"),
             "role": profile.get("role"),
-            "tenant_id": profile.get("tenant_id")
+            "tenant_id": tenant_id,
+            "trial_ends_at": trial_ends_at
         }
     except Exception as e:
         raise HTTPException(

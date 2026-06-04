@@ -4,6 +4,8 @@ import inspect
 from functools import wraps
 from app.core.config import settings
 
+CACHE_VERSION = "v2"
+
 # Conexión global a Redis (Sincrónico para simplificar con endpoints def)
 try:
     redis_client = redis.from_url(settings.REDIS_URL, decode_responses=True)
@@ -28,7 +30,7 @@ def generate_cache_key(func_name, args, kwargs):
     # Filtrar kwargs para remover objetos no serializables como duck_con
     filtered_kwargs = {k: v for k, v in kwargs.items() if k not in ["duck_con", "user_data"]}
     
-    return f"cache:{func_name}:{tenant_id}:{json.dumps(filtered_kwargs, sort_keys=True)}"
+    return f"cache:{CACHE_VERSION}:{func_name}:{tenant_id}:{json.dumps(filtered_kwargs, sort_keys=True)}"
 
 def cache_response(expire: int = 3600):
     """
@@ -100,4 +102,3 @@ def invalidate_tenant_cache(tenant_id: str):
                 break
     except Exception as e:
         print(f"Error invalidating cache for tenant {tenant_id}: {e}")
-

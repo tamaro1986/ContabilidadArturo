@@ -1,8 +1,10 @@
 export interface TrendData {
     mes: string;
+    year?: number;
     ventas_actual: number;
     gastos_actual: number;
     ventas_anterior?: number;
+    gastos_anterior?: number;
     rentabilidad?: number;
 }
 

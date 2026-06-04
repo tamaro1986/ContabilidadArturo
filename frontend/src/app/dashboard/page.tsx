@@ -34,6 +34,7 @@ import { Company, CsvValidationResult } from "@/types/companyTypes";
 import Paywall from "../../components/auth/Paywall";
 import AdminPanel from "../../components/admin/AdminPanel";
 import UserInvitationForm from "../../components/auth/UserInvitationForm";
+import MembershipPanel from "../../components/settings/MembershipPanel";
 
 // ── Icons (SVG Inline - Zero Dependencies - Premium Executive Set) ──────────────────────
 const Icons = {
@@ -82,6 +83,22 @@ const Icons = {
     Upload: () => (
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
     )
+};
+
+const formatMoney = (value: number) =>
+    value.toLocaleString('es-SV', { minimumFractionDigits: value % 1 === 0 ? 0 : 2, maximumFractionDigits: 2 });
+
+const getTrendLabel = (current: number, previous?: number) => {
+    if (!previous) return 'Sin base';
+    const pct = ((current - previous) / Math.abs(previous)) * 100;
+    const sign = pct >= 0 ? '+' : '';
+    return `${sign}${pct.toFixed(1)}%`;
+};
+
+const getTrendClass = (trend: string) => {
+    if (trend.startsWith('+')) return 'bg-emerald-100 text-emerald-700';
+    if (trend.startsWith('-')) return 'bg-red-100 text-red-700';
+    return 'bg-zinc-100 text-zinc-600';
 };
 
 export default function DashboardPage() {
@@ -313,10 +330,10 @@ export default function DashboardPage() {
         fetchAll();
     }, [refreshHistory]);
 
-    // ── Paywall Guard ──────────────────────────────────────────────────────────────
-    if (isTrialExpired && !loading) {
-        return <Paywall tenantId={userProfile?.tenant_id} onSuccess={() => window.location.reload()} />;
-    }
+    // ── Paywall Guard (Changed to Read-Only Banner in UI) ─────────────────────────
+    // if (isTrialExpired && !loading) {
+    //     return <Paywall tenantId={userProfile?.tenant_id} onSuccess={() => window.location.reload()} />;
+    // }
 
     if (loading) return (
         <div className="min-h-screen flex flex-col items-center justify-center bg-zinc-950 transition-colors duration-500">
@@ -342,6 +359,17 @@ export default function DashboardPage() {
     );
 
     const hasData = trendsData.length > 0 || (typesData?.ventas?.length ?? 0) > 0;
+    const latestTrend = trendsData[trendsData.length - 1];
+    const currentPeriodLabel = latestTrend ? `${latestTrend.mes}${latestTrend.year ? ` ${latestTrend.year}` : ''}` : 'Sin periodo';
+    const currentSales = latestTrend?.ventas_actual || 0;
+    const previousSales = latestTrend?.ventas_anterior || 0;
+    const currentExpenses = latestTrend?.gastos_actual || 0;
+    const previousExpenses = latestTrend?.gastos_anterior || 0;
+    const currentProfit = currentSales - currentExpenses;
+    const previousProfit = previousSales - previousExpenses;
+    const averageTicket = customerData.length
+        ? customerData.reduce((sum, customer) => sum + (customer.ticketPromedio || 0), 0) / customerData.length
+        : 0;
 
     const businessSidebar = [
         { group: "ESTRATEGIA", items: [
@@ -457,7 +485,7 @@ export default function DashboardPage() {
                         <div className="flex items-center gap-6">
                             <div className="flex items-center gap-2 bg-emerald-50 text-emerald-700 px-4 py-1.5 rounded-full border border-emerald-100">
                                 <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
-                                <span className="text-[10px] font-black uppercase tracking-widest">En Vivo: Mayo 2024</span>
+                                <span className="text-[10px] font-black uppercase tracking-widest">En Vivo: {currentPeriodLabel}</span>
                             </div>
                             
                             <div className="h-8 w-px bg-zinc-200" />
@@ -526,14 +554,41 @@ export default function DashboardPage() {
                             <div className="flex gap-3">
                                 <button className="bg-white border border-zinc-200 text-zinc-900 px-6 py-3 rounded-xl text-xs font-black uppercase tracking-widest flex items-center gap-3 hover:bg-zinc-50 transition-all shadow-sm">
                                     <Icons.Calendar />
-                                    Mayo 2024
+                                    {currentPeriodLabel}
                                 </button>
-                                <button className={`px-6 py-3 rounded-xl text-xs font-black uppercase tracking-widest flex items-center gap-3 transition-all shadow-lg ${persona === 'business' ? 'bg-emerald-500 text-white shadow-emerald-500/20 hover:bg-emerald-600' : 'bg-blue-600 text-white shadow-blue-600/20 hover:bg-blue-700'}`}>
+                                <button 
+                                    disabled={isTrialExpired}
+                                    className={`px-6 py-3 rounded-xl text-xs font-black uppercase tracking-widest flex items-center gap-3 transition-all shadow-lg ${
+                                        isTrialExpired 
+                                        ? 'bg-zinc-200 text-zinc-400 cursor-not-allowed shadow-none'
+                                        : persona === 'business' ? 'bg-emerald-500 text-white shadow-emerald-500/20 hover:bg-emerald-600' : 'bg-blue-600 text-white shadow-blue-600/20 hover:bg-blue-700'
+                                    }`}>
                                     <Icons.Plus />
                                     {persona === 'business' ? 'Nuevo Movimiento' : 'Nueva Factura'}
                                 </button>
                             </div>
                         </div>
+
+                        {/* Read-Only Banner */}
+                        {isTrialExpired && (
+                            <div className="mb-8 p-4 bg-red-500/10 border border-red-500/20 rounded-2xl flex items-center justify-between">
+                                <div className="flex items-center gap-4">
+                                    <div className="w-10 h-10 bg-red-500/20 rounded-xl flex items-center justify-center text-red-500">
+                                        <Icons.Upload />
+                                    </div>
+                                    <div>
+                                        <p className="text-sm font-black text-red-500 uppercase tracking-widest">Membresía Expirada</p>
+                                        <p className="text-xs text-red-400/80 font-bold">Su acceso es de solo lectura. No puede crear ni editar registros.</p>
+                                    </div>
+                                </div>
+                                <button 
+                                    onClick={() => setActiveTab('config')}
+                                    className="px-4 py-2 bg-red-500 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-red-600 transition-colors"
+                                >
+                                    Renovar / Aplicar Cupón
+                                </button>
+                            </div>
+                        )}
 
                         {/* View Switching Logic */}
                         <div className="transition-all duration-700 animate-in fade-in slide-in-from-bottom-6">
@@ -585,16 +640,16 @@ export default function DashboardPage() {
                                     {/* Key Indicators Grid */}
                                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
                                         {[
-                                            { label: 'Facturación Mensual', val: trendsData[trendsData.length-1]?.ventas_actual || 0, trend: '+12.5%', color: 'text-zinc-900', bg: 'bg-white' },
-                                            { label: 'Gastos Operativos', val: trendsData[trendsData.length-1]?.gastos_actual || 0, trend: '-3.2%', color: 'text-zinc-900', bg: 'bg-white' },
-                                            { label: 'Margen de Utilidad', val: (trendsData[trendsData.length-1]?.ventas_actual || 0) - (trendsData[trendsData.length-1]?.gastos_actual || 0), trend: '+8.1%', color: 'text-emerald-600', bg: 'bg-emerald-50/50 border-emerald-100' },
-                                            { label: persona === 'business' ? 'Ticket Promedio' : 'Provisión IVA', val: persona === 'business' ? 124.50 : (taxData?.liquidation?.debito_fiscal || 0), trend: persona === 'business' ? '+4.2%' : 'A Tiempo', color: persona === 'business' ? 'text-emerald-600' : 'text-blue-600', bg: persona === 'business' ? 'bg-emerald-50/50 border-emerald-100' : 'bg-blue-50/50 border-blue-100' }
+                                            { label: 'Facturación Mensual', val: currentSales, trend: getTrendLabel(currentSales, previousSales), color: 'text-zinc-900', bg: 'bg-white' },
+                                            { label: 'Gastos Operativos', val: currentExpenses, trend: getTrendLabel(currentExpenses, previousExpenses), color: 'text-zinc-900', bg: 'bg-white' },
+                                            { label: 'Margen de Utilidad', val: currentProfit, trend: getTrendLabel(currentProfit, previousProfit), color: 'text-emerald-600', bg: 'bg-emerald-50/50 border-emerald-100' },
+                                            { label: persona === 'business' ? 'Ticket Promedio' : 'Provisión IVA', val: persona === 'business' ? averageTicket : (taxData?.liquidation?.debito_fiscal || 0), trend: persona === 'business' ? (averageTicket > 0 ? 'Calculado' : 'Sin base') : 'A Tiempo', color: persona === 'business' ? 'text-emerald-600' : 'text-blue-600', bg: persona === 'business' ? 'bg-emerald-50/50 border-emerald-100' : 'bg-blue-50/50 border-blue-100' }
                                         ].map((stat, i) => (
                                             <div key={i} className={`${stat.bg} border border-zinc-200/60 rounded-4xl p-8 shadow-sm group hover:shadow-xl hover:shadow-zinc-200/50 transition-all duration-500`}>
                                                 <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-3">{stat.label}</p>
                                                 <div className="flex items-end justify-between">
-                                                    <p className={`text-3xl font-black tabular-nums ${stat.color}`}>${stat.val.toLocaleString()}</p>
-                                                    <span className={`text-[10px] font-black px-2.5 py-1 rounded-full ${stat.trend.startsWith('+') ? 'bg-emerald-100 text-emerald-700' : stat.trend.startsWith('-') ? 'bg-red-100 text-red-700' : 'bg-zinc-100 text-zinc-600'}`}>
+                                                    <p className={`text-3xl font-black tabular-nums ${stat.color}`}>${formatMoney(stat.val)}</p>
+                                                    <span className={`text-[10px] font-black px-2.5 py-1 rounded-full ${getTrendClass(stat.trend)}`}>
                                                         {stat.trend}
                                                     </span>
                                                 </div>
@@ -980,7 +1035,35 @@ export default function DashboardPage() {
                                                 <p className="text-sm text-zinc-500 font-medium">Envíe invitaciones a nuevos usuarios y gestione roles administrativos.</p>
                                             </button>
                                         )}
+
+                                        {/* Estado de Membresía */}
+                                        <button 
+                                            onClick={() => setActiveTab('membership')}
+                                            className="p-8 bg-zinc-50 border border-zinc-200 rounded-3xl group hover:border-emerald-500/50 transition-colors text-left"
+                                        >
+                                            <div className={`w-10 h-10 bg-white rounded-xl flex items-center justify-center shadow-sm mb-6 transition-all ${isTrialExpired ? 'group-hover:bg-red-500 text-red-500 group-hover:text-white' : 'group-hover:bg-emerald-500 group-hover:text-white'}`}>
+                                                <Icons.Building />
+                                            </div>
+                                            <p className="text-[11px] font-black text-zinc-900 uppercase tracking-widest mb-3">Estado de Membresía</p>
+                                            <p className="text-sm text-zinc-500 font-medium">Revise el tiempo restante de su plan y aplique cupones de renovación.</p>
+                                        </button>
                                     </div>
+                                </div>
+                            )}
+
+                            {activeTab === 'membership' && (
+                                <div className="animate-in fade-in slide-in-from-bottom-6 duration-700 space-y-6">
+                                    <button 
+                                        onClick={() => setActiveTab('config')}
+                                        className="bg-white border border-zinc-200 text-zinc-600 px-6 py-3 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-zinc-50 transition-all shadow-sm flex items-center gap-2"
+                                    >
+                                        ← Volver a Configuración
+                                    </button>
+                                    <MembershipPanel 
+                                        trialEndsAt={userProfile?.tenants?.trial_ends_at || ''} 
+                                        tenantId={userProfile?.tenant_id} 
+                                        onRefresh={() => setRefreshHistory(prev => prev + 1)}
+                                    />
                                 </div>
                             )}
                         </div>

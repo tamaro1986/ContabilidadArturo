@@ -114,4 +114,6 @@ app.include_router(analytics.router, prefix=f"{settings.API_V1_STR}/analytics", 
 app.include_router(ai_router.router, prefix=f"{settings.API_V1_STR}/ai", tags=["ai-anomalies"])
 app.include_router(reports.router, prefix=f"{settings.API_V1_STR}/reports", tags=["reports"])
 
-
+from app.api.routes import admin, tenants
+app.include_router(admin.router, prefix=f"{settings.API_V1_STR}/admin", tags=["admin"])
+app.include_router(tenants.router, prefix=f"{settings.API_V1_STR}/tenant", tags=["tenant"])

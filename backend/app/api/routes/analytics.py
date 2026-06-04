@@ -416,6 +416,7 @@ def get_financial_trends(
         )
         SELECT 
             b.month_num,
+            cy.max_year AS year_num,
             SUM(CASE WHEN b.year_num = cy.max_year THEN b.ventas ELSE 0 END) AS ventas_actual,
             SUM(CASE WHEN b.year_num = cy.max_year - 1 THEN b.ventas ELSE 0 END) AS ventas_anterior,
             SUM(CASE WHEN b.year_num = cy.max_year THEN b.gastos ELSE 0 END) AS gastos_actual,
@@ -433,16 +434,17 @@ def get_financial_trends(
         data = []
         for row in results:
             month_idx = int(row[0]) - 1
-            ventas_actual = float(row[1])
-            gastos_actual = float(row[3])
+            ventas_actual = float(row[2])
+            gastos_actual = float(row[4])
             rentabilidad = ventas_actual - gastos_actual
             
             data.append({
                 "mes": months_es[month_idx] if 0 <= month_idx < 12 else str(row[0]),
+                "year": int(row[1]) if row[1] is not None else None,
                 "ventas_actual": ventas_actual,
-                "ventas_anterior": float(row[2]),
+                "ventas_anterior": float(row[3]),
                 "gastos_actual": gastos_actual,
-                "gastos_anterior": float(row[4]),
+                "gastos_anterior": float(row[5]),
                 "rentabilidad": rentabilidad
             })
             

@@ -25,6 +25,7 @@ class UserResponse(BaseModel):
     full_name: Optional[str] = None
     role: Optional[str] = None
     tenant_id: Optional[str] = None
+    trial_ends_at: Optional[str] = None
 
 class UserInvite(BaseModel):
     email: EmailStr
