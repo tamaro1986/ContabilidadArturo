@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from pydantic import BaseModel
 from supabase import Client
-from app.services.supabase_client import get_supabase_client
+from app.services.supabase_client import get_supabase_client, get_supabase_admin_client
 from app.api.dependencies.roles import require_contador
 
 router = APIRouter()
@@ -13,7 +13,8 @@ class ApplyCouponRequest(BaseModel):
 def apply_coupon(
     request: Request,
     coupon_in: ApplyCouponRequest,
-    supabase: Client = Depends(get_supabase_client)
+    supabase: Client = Depends(get_supabase_client),
+    admin_supabase: Client = Depends(get_supabase_admin_client)
 ):
     try:
         # Extraer información del usuario a partir de dependencias
@@ -81,7 +82,7 @@ def apply_coupon(
             new_trial_ends = now + timedelta(days=days_granted)
 
         # Update tenant
-        update_res = supabase.table("tenants").update({
+        update_res = admin_supabase.table("tenants").update({
             "trial_ends_at": new_trial_ends.isoformat()
         }).eq("id", tenant_id).execute()
 
