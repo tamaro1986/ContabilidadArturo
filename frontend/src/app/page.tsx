@@ -77,10 +77,13 @@ export default function Home() {
       <nav className="fixed top-0 left-0 right-0 z-50 bg-white/70 backdrop-blur-xl border-b border-outline-variant/30">
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
           <button onClick={() => scrollTo("hero")} className="flex items-center gap-2.5 group">
-            <div className="w-9 h-9 bg-primary rounded-xl flex items-center justify-center shadow-md shadow-primary/20 group-hover:rotate-3 transition-transform">
-              <ShieldCheck className="text-on-primary" size={20} />
+            <div className="min-w-[36px] w-9 h-9 bg-[#1e2a4a] rounded-xl flex items-center justify-center shadow-md shadow-[#1e2a4a]/20 group-hover:rotate-3 transition-transform border border-white/10 shrink-0">
+              <span className="text-xl font-serif text-white font-black tracking-tighter">G</span>
             </div>
-            <span className="text-xl font-black text-primary tracking-tighter uppercase">Arturo</span>
+            <div className="flex flex-col items-start leading-none mt-0.5">
+              <span className="text-xl font-serif font-black text-[#1e2a4a] tracking-tight">Garcia</span>
+              <span className="text-[8px] font-bold tracking-[0.3em] text-[#2a8b54] uppercase">INTEGRUM</span>
+            </div>
           </button>
 
           <div className="hidden md:flex items-center gap-8">
@@ -272,12 +275,12 @@ export default function Home() {
         <div className="max-w-6xl mx-auto px-6 py-12">
           <div className="flex flex-col md:flex-row items-center justify-between gap-8">
             <div className="flex items-center gap-3">
-              <div className="w-9 h-9 bg-primary rounded-xl flex items-center justify-center shadow-md shadow-primary/20">
-                <ShieldCheck className="text-on-primary" size={18} />
+              <div className="w-9 h-9 bg-[#1e2a4a] rounded-xl flex items-center justify-center shadow-md shadow-[#1e2a4a]/20 border border-white/10 shrink-0">
+                <span className="text-lg font-serif text-white font-black tracking-tighter">G</span>
               </div>
-              <div>
-                <span className="text-lg font-black text-primary tracking-tighter uppercase">Arturo</span>
-                <p className="text-[9px] font-bold text-on-surface-variant uppercase tracking-widest opacity-60">Inteligencia Contable con IA</p>
+              <div className="flex flex-col items-start leading-none mt-1">
+                <span className="text-lg font-serif font-black text-[#1e2a4a] tracking-tight">Garcia</span>
+                <span className="text-[9px] font-bold tracking-[0.3em] text-[#2a8b54] uppercase">INTEGRUM</span>
               </div>
             </div>
 
@@ -290,7 +293,7 @@ export default function Home() {
 
           <div className="mt-8 pt-6 border-t border-outline-variant/20 flex flex-col md:flex-row items-center justify-between gap-4">
             <p className="text-[9px] font-bold text-on-surface-variant uppercase tracking-widest opacity-40">
-              © 2026 Arturo. Todos los derechos reservados.
+              © 2026 Garcia Integrum. Todos los derechos reservados.
             </p>
             <p className="text-[9px] font-bold text-on-surface-variant uppercase tracking-widest opacity-40">
               v2026.05 • Hecho en El Salvador 🇸🇻

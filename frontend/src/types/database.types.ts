@@ -59,6 +59,7 @@ export interface Database {
         Row: {
           id: string
           code: string
+          tenant_id: string | null
           days_granted: number
           is_active: boolean
           created_at: string
@@ -66,6 +67,7 @@ export interface Database {
         Insert: {
           id?: string
           code: string
+          tenant_id?: string | null
           days_granted?: number
           is_active?: boolean
           created_at?: string
@@ -73,6 +75,7 @@ export interface Database {
         Update: {
           id?: string
           code?: string
+          tenant_id?: string | null
           days_granted?: number
           is_active?: boolean
           created_at?: string

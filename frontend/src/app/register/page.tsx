@@ -75,11 +75,11 @@ export default function RegisterPage() {
       <div className="max-w-md w-full mx-4 relative z-10">
         {/* Logo / Brand Section */}
         <div className="flex flex-col items-center mb-10">
-          <div className="w-16 h-16 bg-primary rounded-2xl flex items-center justify-center shadow-xl shadow-primary/20 mb-4 transform -rotate-3 hover:rotate-0 transition-transform duration-500">
-            <ShieldCheck className="text-on-primary" size={32} />
+          <div className="w-16 h-16 bg-[#1e2a4a] rounded-2xl flex items-center justify-center shadow-xl shadow-[#1e2a4a]/20 mb-4 transform -rotate-3 hover:rotate-0 transition-transform duration-500 border border-white/10">
+            <span className="text-4xl font-serif text-white font-black tracking-tighter">G</span>
           </div>
-          <h1 className="text-3xl font-black text-primary tracking-tighter uppercase">Arturo</h1>
-          <p className="text-on-surface-variant text-[10px] font-bold uppercase tracking-[0.3em] mt-1 opacity-60">Sistemas Contables Legales</p>
+          <h1 className="text-3xl font-serif font-black text-[#1e2a4a] tracking-tight">Garcia</h1>
+          <p className="text-[#2a8b54] text-[10px] font-bold uppercase tracking-[0.4em] mt-1">INTEGRUM</p>
         </div>
 
         {/* Register Card */}

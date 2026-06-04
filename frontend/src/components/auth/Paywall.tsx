@@ -32,6 +32,10 @@ export default function Paywall({ tenantId, onSuccess }: PaywallProps) {
         throw new Error('Código inválido o expirado.');
       }
 
+      if (codeData.tenant_id && codeData.tenant_id !== tenantId) {
+        throw new Error('Este código no pertenece a esta empresa.');
+      }
+
       // 2. Update tenant trial_ends_at
       const { error: updateError } = await supabase
         .from('tenants')

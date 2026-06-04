@@ -90,7 +90,7 @@ _DOC_TYPE_TO_HANDLER = {
     "Compras": "COMPRAS",
 }
 
-def _process_hacienda_row(row: dict, filename: str, tenant_id: str, company_id: str, document_type: str = None) -> dict:
+def _process_hacienda_row(row: dict, filename: str, tenant_id: str, company_id: str, document_type: str = None, upload_id: str = None) -> dict:
     """Mapea una fila de CSV de Hacienda al esquema de financial_records."""
     try:
         record = None
@@ -153,38 +153,14 @@ def _process_hacienda_row(row: dict, filename: str, tenant_id: str, company_id: 
             record = {
                 "tenant_id": tenant_id, "company_id": company_id, "client_id": "CONSUMIDOR_FINAL", "customer_name": "CONSUMIDOR FINAL",
                 "amount": amount, "iva_amount": round(amount * IVA_RATE, 2), "exento_amount": exento, "transaction_date": _parse_date(fecha_raw).isoformat(),
-                "transaction_type": "Ventas Consumidor", "nit_dui": doc_desde,
+                "transaction_type": "Ventas Consumidor", "nit_dui": nit,
                 "document_type": _norm_tipo_doc(row.get(tipo_doc_key, "01")),
                 "upload_id": upload_id
             }
 
-        elif "COMPRAS" in handler_key:
-            ...
-            record = {
-                "tenant_id": tenant_id, "company_id": company_id, "client_id": nit, "customer_name": name,
-                "amount": amount, "iva_amount": iva, "exento_amount": exento, "transaction_date": _parse_date(fecha_raw).isoformat(),
                 "transaction_type": "Compras", "nit_dui": nit,
                 "document_type": _norm_tipo_doc(row.get(tipo_doc_key, "03")),
                 "upload_id": upload_id
-            }
-
-        elif "COMPRAS" in handler_key:
-            compras_key = next((k for k in row if "COMPRA" in k.upper() and "GRAVADA" in k.upper()), "")
-            amount = _parse_decimal(row.get(compras_key, "0"))
-            exento_key = next((k for k in row if "EXENTA" in k.upper() or "EXENTO" in k.upper()), "")
-            exento = _parse_decimal(row.get(exento_key, "0")) if exento_key else 0.0
-            iva_key = next((k for k in row if "CREDITO" in k.upper() or "DITO" in k.upper() and "FISC" in k.upper()), "")
-            iva = _parse_decimal(row.get(iva_key, "0"))
-            nit_key = next((k for k in row if "NIT" in k.upper() and "PROVEEDOR" in k.upper()), "")
-            nit = row.get(nit_key, "").strip() or "DESCONOCIDO"
-            name = next((v for k, v in row.items() if "NOMBRE" in k.upper()), "DESCONOCIDO")
-            fecha_raw = next((v for k, v in row.items() if "FECHA" in k.upper()), "")
-            tipo_doc_key = next((k for k in row if "TIPO" in k.upper() and "DOC" in k.upper()), "")
-            record = {
-                "tenant_id": tenant_id, "company_id": company_id, "client_id": nit, "customer_name": name,
-                "amount": amount, "iva_amount": iva, "exento_amount": exento, "transaction_date": _parse_date(fecha_raw).isoformat(),
-                "transaction_type": "Compras", "nit_dui": nit,
-                "document_type": _norm_tipo_doc(row.get(tipo_doc_key, "03"))
             }
 
         # Fallback para CSV genérico (3 columnas: client_id, amount, date)
@@ -327,7 +303,7 @@ def process_financial_csv(bucket_name: str, file_path: str, tenant_id: str, comp
             reader = csv.DictReader(io.StringIO(content), delimiter=sep)
             for row in reader:
                 sanitized_row = {k.strip(): _sanitize_cell(v) for k, v in row.items() if k}
-                record = _process_hacienda_row(sanitized_row, filename, tenant_id, company_id, document_type=handler_doc_type)
+                record = _process_hacienda_row(sanitized_row, filename, tenant_id, company_id, document_type=handler_doc_type, upload_id=upload_id)
                 if record:
                     all_records.append(record)
 

@@ -397,11 +397,13 @@ export default function DashboardPage() {
                 <aside className={`bg-zinc-950 text-white transition-all duration-500 ease-in-out flex flex-col z-50 ${sidebarOpen ? 'w-72' : 'w-20'}`}>
                     {/* Logo Area */}
                     <div className="p-6 h-20 flex items-center gap-4 overflow-hidden border-b border-white/5">
-                        <img src="/logo-garcia.png" alt="Logo" className="w-10 h-10 object-contain" />
+                        <div className="min-w-[40px] w-10 h-10 bg-[#1e2a4a] rounded-xl flex items-center justify-center shadow-lg shadow-[#1e2a4a]/20 border border-white/10 shrink-0">
+                            <span className="text-2xl font-serif text-white font-black tracking-tighter">G</span>
+                        </div>
                         {sidebarOpen && (
                             <div className="flex flex-col leading-none">
-                                <span className="text-lg font-black tracking-tight text-white uppercase">Garcia</span>
-                                <span className="text-[10px] font-bold tracking-[0.3em] text-emerald-500 uppercase opacity-80">INTEGRUM</span>
+                                <span className="text-lg font-serif font-black tracking-tight text-white">Garcia</span>
+                                <span className="text-[10px] font-bold tracking-[0.3em] text-[#3AA867] uppercase opacity-90 mt-0.5">INTEGRUM</span>
                             </div>
                         )}
                     </div>
@@ -498,7 +500,7 @@ export default function DashboardPage() {
                                 <div className="flex items-center gap-3 pl-2 group cursor-pointer">
                                     <div className="text-right hidden sm:block">
                                         <p className="text-sm font-bold text-zinc-900 leading-none">
-                                        {userProfile?.full_name && userProfile.full_name !== 'Admin Seed' ? userProfile.full_name : (session?.user?.user_metadata?.name || "Arturo Integrum")}
+                                        {userProfile?.full_name && userProfile.full_name !== 'Admin Seed' ? userProfile.full_name : (session?.user?.user_metadata?.name || "Garcia Integrum")}
                                         </p>
                                         <p className="text-[10px] font-black text-zinc-400 uppercase tracking-tighter mt-1">
                                             {isAdmin ? "Administrador Global" : userProfile?.role || "Consultando..."}

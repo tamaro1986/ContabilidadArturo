@@ -94,10 +94,11 @@ export default function ResetPasswordPage() {
       
       <div className="max-w-md w-full mx-4 relative z-10">
         <div className="flex flex-col items-center mb-10">
-          <div className="w-16 h-16 bg-primary rounded-2xl flex items-center justify-center shadow-xl shadow-primary/20 mb-4">
-            <ShieldCheck className="text-on-primary" size={32} />
+          <div className="w-16 h-16 bg-[#1e2a4a] rounded-2xl flex items-center justify-center shadow-xl shadow-[#1e2a4a]/20 mb-4 border border-white/10">
+            <span className="text-4xl font-serif text-white font-black tracking-tighter">G</span>
           </div>
-          <h1 className="text-3xl font-black text-primary tracking-tighter uppercase">Arturo</h1>
+          <h1 className="text-3xl font-serif font-black text-[#1e2a4a] tracking-tight">Garcia</h1>
+          <p className="text-[#2a8b54] text-[10px] font-bold uppercase tracking-[0.4em] mt-1">INTEGRUM</p>
         </div>
 
         <div className="bg-surface-container-lowest p-10 rounded-2xl border border-outline-variant shadow-2xl backdrop-blur-sm bg-opacity-80">

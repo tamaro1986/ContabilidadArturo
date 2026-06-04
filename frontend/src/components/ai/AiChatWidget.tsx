@@ -26,6 +26,40 @@ export default function AiChatWidget({ }: AiChatWidgetProps) {
   const [showSql, setShowSql] = useState<number | null>(null);
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
   
+  // Drag logic states
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const dragRef = useRef<{ startX: number; startY: number; moved: boolean }>({ startX: 0, startY: 0, moved: false });
+
+  const handlePointerDown = (e: React.PointerEvent) => {
+    if (e.button !== 0) return; // Only left mouse button
+    setIsDragging(true);
+    dragRef.current = { startX: e.clientX - position.x, startY: e.clientY - position.y, moved: false };
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  };
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (isDragging) {
+      const newX = e.clientX - dragRef.current.startX;
+      const newY = e.clientY - dragRef.current.startY;
+      if (Math.abs(newX - position.x) > 3 || Math.abs(newY - position.y) > 3) {
+        dragRef.current.moved = true;
+      }
+      setPosition({ x: newX, y: newY });
+    }
+  };
+
+  const handlePointerUp = (e: React.PointerEvent) => {
+    setIsDragging(false);
+    (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+  };
+
+  const handleClick = () => {
+    if (!dragRef.current.moved) {
+      setIsOpen(!isOpen);
+    }
+  };
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -74,7 +108,10 @@ export default function AiChatWidget({ }: AiChatWidgetProps) {
   };
 
   return (
-    <div className={`fixed bottom-8 right-8 z-100 transition-all duration-500 transform ${isOpen ? 'scale-100 rotate-0' : 'hover:scale-110'}`}>
+    <div 
+      className={`fixed bottom-8 right-8 z-100 ${isDragging ? '' : 'transition-transform duration-500'} ${isOpen && !isDragging ? 'scale-100 rotate-0' : (!isDragging ? 'hover:scale-110' : '')}`}
+      style={{ transform: `translate(${position.x}px, ${position.y}px)` }}
+    >
       {/* ── CHAT WINDOW ────────────────────────────────────────────────────── */}
       {isOpen && <div className="absolute bottom-20 right-0 w-100 h-150 bg-white/80 backdrop-blur-2xl rounded-[2.5rem] shadow-2xl border border-white/40 flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom-8 duration-500 ring-1 ring-black/5">
           {/* Header */}
@@ -214,8 +251,14 @@ export default function AiChatWidget({ }: AiChatWidgetProps) {
 
       {/* ── FLOATING BUTTON ────────────────────────────────────────────────── */}
       <button 
-        onClick={() => setIsOpen(!isOpen)}
-        className={`w-16 h-16 rounded-3xl flex items-center justify-center shadow-2xl transition-all duration-500 group relative ${
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
+        onClick={handleClick}
+        className={`w-16 h-16 rounded-3xl flex items-center justify-center shadow-2xl transition-all duration-500 group relative touch-none select-none ${
+          isDragging ? "cursor-grabbing scale-105" : "cursor-pointer"
+        } ${
           isOpen ? "bg-zinc-950 rotate-90" : "bg-emerald-500 hover:scale-110 active:scale-95"
         }`}
       >
