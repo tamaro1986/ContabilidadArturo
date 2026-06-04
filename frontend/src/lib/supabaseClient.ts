@@ -1,9 +1,12 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+const isBrowser = typeof window !== 'undefined';
+const originalSupabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+// Usar el proxy relativo en el navegador para burlar firewalls, y la URL real en el servidor (SSR)
+const supabaseUrl = isBrowser ? '/supabase-api' : originalSupabaseUrl;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
 
-if (!supabaseUrl || !supabaseAnonKey) {
+if (!originalSupabaseUrl || !supabaseAnonKey) {
   console.warn('Supabase credentials are missing. Check your .env.local file.')
 }
 
