@@ -56,6 +56,9 @@ export default function AiChatWidget({ }: AiChatWidgetProps) {
 
   const handleClick = () => {
     if (!dragRef.current.moved) {
+      if (!isOpen) {
+        setPosition({ x: 0, y: 0 });
+      }
       setIsOpen(!isOpen);
     }
   };

@@ -397,7 +397,7 @@ export default function DashboardPage() {
                 <aside className={`bg-zinc-950 text-white transition-all duration-500 ease-in-out flex flex-col z-50 ${sidebarOpen ? 'w-72' : 'w-20'}`}>
                     {/* Logo Area */}
                     <div className="p-6 h-20 flex items-center gap-4 overflow-hidden border-b border-white/5">
-                        <div className="min-w-[40px] w-10 h-10 bg-[#1e2a4a] rounded-xl flex items-center justify-center shadow-lg shadow-[#1e2a4a]/20 border border-white/10 shrink-0">
+                        <div className="min-w-10 w-10 h-10 bg-[#1e2a4a] rounded-xl flex items-center justify-center shadow-lg shadow-[#1e2a4a]/20 border border-white/10 shrink-0">
                             <span className="text-2xl font-serif text-white font-black tracking-tighter">G</span>
                         </div>
                         {sidebarOpen && (

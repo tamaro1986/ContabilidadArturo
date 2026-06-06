@@ -71,20 +71,6 @@ export default function FinancialTrendsChart({ data }: { data: TrendData[] }) {
 
   return (
     <div className="flex flex-col space-y-4">
-      <div className="flex items-center justify-between px-2">
-        <h4 className="text-[10px] font-black text-primary uppercase tracking-widest">Tendencias de Ingresos vs Gastos</h4>
-        <div className="flex gap-4">
-          <div className="flex items-center gap-1.5">
-            <div className="w-2 h-2 rounded-full bg-secondary" />
-            <span className="text-[9px] font-bold text-on-surface-variant uppercase tracking-wider">Ventas</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <div className="w-2 h-2 rounded-full bg-primary" />
-            <span className="text-[9px] font-bold text-on-surface-variant uppercase tracking-wider">Gastos</span>
-          </div>
-        </div>
-      </div>
-
       <div className="relative border border-outline-variant/20 rounded-xl bg-surface-container-lowest p-4 overflow-hidden shadow-sm">
         <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-auto overflow-visible select-none">
           <defs>

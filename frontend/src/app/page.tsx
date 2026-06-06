@@ -77,7 +77,7 @@ export default function Home() {
       <nav className="fixed top-0 left-0 right-0 z-50 bg-white/70 backdrop-blur-xl border-b border-outline-variant/30">
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
           <button onClick={() => scrollTo("hero")} className="flex items-center gap-2.5 group">
-            <div className="min-w-[36px] w-9 h-9 bg-[#1e2a4a] rounded-xl flex items-center justify-center shadow-md shadow-[#1e2a4a]/20 group-hover:rotate-3 transition-transform border border-white/10 shrink-0">
+            <div className="min-w-9 w-9 h-9 bg-[#1e2a4a] rounded-xl flex items-center justify-center shadow-md shadow-[#1e2a4a]/20 group-hover:rotate-3 transition-transform border border-white/10 shrink-0">
               <span className="text-xl font-serif text-white font-black tracking-tighter">G</span>
             </div>
             <div className="flex flex-col items-start leading-none mt-0.5">
