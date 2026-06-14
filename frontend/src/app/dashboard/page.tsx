@@ -118,6 +118,10 @@ export default function DashboardPage() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
+    // Year selection
+    const [availableYears, setAvailableYears] = useState<number[]>([]);
+    const [selectedYear, setSelectedYear] = useState<number | null>(null);
+
     // Customer Module State
     const [isSlideOverOpen, setIsSlideOverOpen] = useState(false);
 
@@ -295,16 +299,33 @@ export default function DashboardPage() {
                 }));
                 setCompaniesList(mappedCompanies as any);
 
+                // Fetch Available Years
+                let currentYearToFetch = selectedYear;
+                try {
+                    const resYears = await fetchWithAuth('/analytics/years');
+                    const jsonYears = await resYears.json();
+                    if (jsonYears.status === 'success' && Array.isArray(jsonYears.data)) {
+                        setAvailableYears(jsonYears.data);
+                        if (jsonYears.data.length > 0 && !selectedYear) {
+                            currentYearToFetch = jsonYears.data[0];
+                            setSelectedYear(currentYearToFetch);
+                        }
+                    }
+                } catch (err) {
+                    console.error("Error loading available years:", err);
+                }
+
                 // 3. Fetch Analytics from Backend
                 const fetchAnalytics = async () => {
+                    const queryParams = currentYearToFetch ? `?year=${currentYearToFetch}` : '';
                     const endpoints = [
-                        { url: '/analytics/financial-trends', setter: (d: any) => setTrendsData(d || []) },
-                        { url: '/analytics/types-breakdown', setter: (d: any) => setTypesData(d || { ventas: [], gastos: [] }) },
-                        { url: '/analytics/tax-summary/iva-liquidation', setter: (d: any) => setTaxData((prev: any) => ({ ...(prev || { liquidation: null, topEntities: [], health: null }), liquidation: d })) },
-                        { url: '/analytics/tax-summary/top-entities', setter: (d: any) => setTaxData((prev: any) => ({ ...(prev || { liquidation: null, topEntities: [], health: null }), topEntities: d })) },
-                        { url: '/analytics/tax-summary/document-health', setter: (d: any) => setTaxData((prev: any) => ({ ...(prev || { liquidation: null, topEntities: [], health: null }), health: d })) },
-                        { url: '/analytics/rfm', setter: (d: any) => setCustomerData(d || []) },
-                        { url: '/analytics/supplier-rfm', setter: (d: any) => setSupplierData(d || []) },
+                        { url: `/analytics/financial-trends${queryParams}`, setter: (d: any) => setTrendsData(d || []) },
+                        { url: `/analytics/types-breakdown${queryParams}`, setter: (d: any) => setTypesData(d || { ventas: [], gastos: [] }) },
+                        { url: `/analytics/tax-summary/iva-liquidation${queryParams}`, setter: (d: any) => setTaxData((prev: any) => ({ ...(prev || { liquidation: null, topEntities: [], health: null }), liquidation: d })) },
+                        { url: `/analytics/tax-summary/top-entities${queryParams}`, setter: (d: any) => setTaxData((prev: any) => ({ ...(prev || { liquidation: null, topEntities: [], health: null }), topEntities: d })) },
+                        { url: `/analytics/tax-summary/document-health${queryParams}`, setter: (d: any) => setTaxData((prev: any) => ({ ...(prev || { liquidation: null, topEntities: [], health: null }), health: d })) },
+                        { url: `/analytics/rfm${queryParams}`, setter: (d: any) => setCustomerData(d || []) },
+                        { url: `/analytics/supplier-rfm${queryParams}`, setter: (d: any) => setSupplierData(d || []) },
                     ];
 
                     await Promise.all(endpoints.map(async ({ url, setter }) => {
@@ -328,7 +349,7 @@ export default function DashboardPage() {
             }
         };
         fetchAll();
-    }, [refreshHistory]);
+    }, [refreshHistory, selectedYear]);
 
     // ── Paywall Guard (Changed to Read-Only Banner in UI) ─────────────────────────
     // if (isTrialExpired && !loading) {
@@ -554,6 +575,22 @@ export default function DashboardPage() {
                             </div>
                             
                             <div className="flex gap-3">
+                                {availableYears.length > 0 && (
+                                    <div className="relative">
+                                        <select
+                                            value={selectedYear || ""}
+                                            onChange={(e) => setSelectedYear(Number(e.target.value))}
+                                            className="appearance-none bg-white border border-zinc-200 text-zinc-900 pl-6 pr-10 py-3 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-zinc-50 transition-all shadow-sm focus:outline-hidden cursor-pointer"
+                                        >
+                                            {availableYears.map(y => (
+                                                <option key={y} value={y}>{y}</option>
+                                            ))}
+                                        </select>
+                                        <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-zinc-500">
+                                            <svg className="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg>
+                                        </div>
+                                    </div>
+                                )}
                                 <button className="bg-white border border-zinc-200 text-zinc-900 px-6 py-3 rounded-xl text-xs font-black uppercase tracking-widest flex items-center gap-3 hover:bg-zinc-50 transition-all shadow-sm">
                                     <Icons.Calendar />
                                     {currentPeriodLabel}
