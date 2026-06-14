@@ -79,7 +79,10 @@ def get_rfm_analysis(
             SELECT 
                 client_id,
                 MAX(customer_name) as customer_name,
-                MAX(transaction_date) as last_pu            FROM pg.public.financial_records
+                MAX(transaction_date) as last_purchase_date,
+                COUNT(id) as frequency,
+                SUM(amount) as monetary
+            FROM pg.public.financial_records
             WHERE tenant_id = ? AND status = 'Valido'
               AND transaction_type IN ('Ventas Contribuyente', 'Ventas Consumidor')
               AND (?::int IS NULL OR EXTRACT('year' FROM transaction_date) = ?::int)
@@ -115,11 +118,7 @@ def get_rfm_analysis(
     """
  
     try:
-        results = duck_con.execute(query, [tenant_id, year, year]).fetchall()ary DESC;
-    """
-
-    try:
-        results = duck_con.execute(query, [tenant_id]).fetchall()
+        results = duck_con.execute(query, [tenant_id, year, year]).fetchall()
         columns = [desc[0] for desc in duck_con.description]
         
         raw_data = [dict(zip(columns, row)) for row in results]
@@ -171,7 +170,11 @@ def get_monthly_customers(
     con su segmento ya mapeado a etiquetas de negocio.
     """
     tenant_id = user_data.get("tenant_id")
-    if not tenant_id:        WITH latest_month AS (
+    if not tenant_id:
+        raise HTTPException(status_code=400, detail="Tenant ID no encontrado")
+
+    query = """
+        WITH latest_month AS (
             SELECT MAX(date_trunc('month', transaction_date)) as max_month
             FROM pg.public.financial_records
             WHERE tenant_id = ? AND status = 'Valido'
@@ -248,7 +251,7 @@ def get_monthly_customers(
             WHERE tenant_id = ? AND status = 'Valido'
               AND (?::int IS NULL OR EXTRACT('year' FROM transaction_date) = ?::int)
         """
-        month_res = duck_con.execute(month_query, [tenant_id, year, year]).fetchone()M pg.public.financial_records WHERE tenant_id = ? AND status = 'Valido'", [tenant_id]).fetchone()
+        month_res = duck_con.execute(month_query, [tenant_id, year, year]).fetchone()
         periodo = str(month_res[0])[:7] if month_res and month_res[0] else "Actual"
 
         return {
@@ -328,7 +331,11 @@ def get_top_entities(
     duck_con = Depends(get_duckdb_client)
 ):
     tenant_id = user_data.get("tenant_id")
-    if not te        # Top Clients
+    if not tenant_id:
+        raise HTTPException(status_code=400, detail="Tenant ID no encontrado")
+
+    try:
+        # Top Clients
         query_clients = """
             WITH latest_month AS (
                 SELECT MAX(date_trunc('month', transaction_date)) as max_month
@@ -370,7 +377,7 @@ def get_top_entities(
             LIMIT 5;
         """
         suppliers_res = duck_con.execute(query_suppliers, [tenant_id, year, year, tenant_id]).fetchall()
-        suppliers_data = [{"nit_dui": row[0], "total_amount": float(row[1])} for row in suppliers_res]    suppliers_data = [{"nit_dui": row[0], "total_amount": float(row[1])} for row in suppliers_res]
+        suppliers_data = [{"nit_dui": row[0], "total_amount": float(row[1])} for row in suppliers_res]
 
         return {
             "status": "success",
@@ -760,7 +767,12 @@ def get_supplier_rfm_analysis(
     user_data: dict = Depends(require_cliente),
     duck_con = Depends(get_duckdb_client)
 ):
-    tenant_id = user_data.get("tenant_id")        WITH rfm_base AS (
+    tenant_id = user_data.get("tenant_id")
+    if not tenant_id:
+        raise HTTPException(status_code=400, detail="Tenant ID no encontrado")
+
+    query = """
+        WITH rfm_base AS (
             SELECT 
                 nit_dui as supplier_id,
                 MAX(customer_name) as supplier_name,
@@ -803,12 +815,7 @@ def get_supplier_rfm_analysis(
     """
  
     try:
-        results = duck_con.execute(query, [tenant_id, year, year]).fetchall()res
-        ORDER BY monetary DESC;
-    """
-
-    try:
-        results = duck_con.execute(query, [tenant_id]).fetchall()
+        results = duck_con.execute(query, [tenant_id, year, year]).fetchall()
         columns = [desc[0] for desc in duck_con.description]
         
         raw_data = [dict(zip(columns, row)) for row in results]
@@ -866,7 +873,12 @@ def get_monthly_suppliers(
     user_data: dict = Depends(require_cliente),
     duck_con = Depends(get_duckdb_client)
 ):
-    tenant_id = user_data.get("tenant_        WITH latest_month AS (
+    tenant_id = user_data.get("tenant_id")
+    if not tenant_id:
+        raise HTTPException(status_code=400, detail="Tenant ID no encontrado")
+
+    query = """
+        WITH latest_month AS (
             SELECT MAX(date_trunc('month', transaction_date)) as max_month
             FROM pg.public.financial_records
             WHERE tenant_id = ? AND status = 'Valido'
@@ -943,7 +955,6 @@ def get_monthly_suppliers(
               AND (?::int IS NULL OR EXTRACT('year' FROM transaction_date) = ?::int)
         """
         month_res = duck_con.execute(month_query, [tenant_id, year, year]).fetchone()
-        periodo = str(month_res[0])[:7] if month_res and month_res[0] else "Actual"e = 'Compras'", [tenant_id]).fetchone()
         periodo = str(month_res[0])[:7] if month_res and month_res[0] else "Actual"
 
         return {
