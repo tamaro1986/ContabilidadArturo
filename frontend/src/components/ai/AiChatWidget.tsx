@@ -73,6 +73,19 @@ export default function AiChatWidget({ }: AiChatWidgetProps) {
     scrollToBottom();
   }, [messages]);
 
+  useEffect(() => {
+    const handleOpenChat = (e: Event) => {
+      setIsOpen(true);
+      setPosition({ x: 0, y: 0 });
+      const customEvent = e as CustomEvent;
+      if (customEvent.detail?.message) {
+        setInput(customEvent.detail.message);
+      }
+    };
+    window.addEventListener("open-ai-chat", handleOpenChat);
+    return () => window.removeEventListener("open-ai-chat", handleOpenChat);
+  }, []);
+
   const handleSend = async () => {
     if (!input.trim() || isLoading) return;
 

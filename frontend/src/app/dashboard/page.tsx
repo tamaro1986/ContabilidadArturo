@@ -105,6 +105,7 @@ export default function DashboardPage() {
     const [persona, setPersona] = useState<'business' | 'fiscal'>('business');
     const [activeTab, setActiveTab] = useState('overview');
     const [sidebarOpen, setSidebarOpen] = useState(true);
+    const [notificationsOpen, setNotificationsOpen] = useState(false);
     
     // Data States
     const [trendsData, setTrendsData] = useState<TrendData[]>([]);
@@ -392,6 +393,8 @@ export default function DashboardPage() {
         ? customerData.reduce((sum, customer) => sum + (customer.ticketPromedio || 0), 0) / customerData.length
         : 0;
 
+    const isAccountantOrAdmin = isAdmin || userProfile?.role === 'contador';
+
     const businessSidebar = [
         { group: "ESTRATEGIA", items: [
             { id: 'overview', label: 'Resumen Ejecutivo', icon: Icons.Dashboard },
@@ -404,7 +407,7 @@ export default function DashboardPage() {
         { group: "TRIBUTACIÓN", items: [
             { id: 'fiscal-summary', label: 'Liquidación de IVA', icon: Icons.Tax },
             { id: 'annexes', label: 'Anexos de Hacienda', icon: Icons.Tax },
-            { id: 'companies', label: 'Carga de Datos', icon: Icons.Upload },
+            ...(isAccountantOrAdmin ? [{ id: 'companies', label: 'Carga de Datos', icon: Icons.Upload }] : []),
         ]},
     ];
 
@@ -513,11 +516,55 @@ export default function DashboardPage() {
                             
                             <div className="h-8 w-px bg-zinc-200" />
 
-                            <div className="flex items-center gap-4">
-                                <button className="relative p-2 text-zinc-400 hover:text-zinc-900 transition-colors">
+                            <div className="flex items-center gap-4 relative">
+                                <button 
+                                    onClick={() => setNotificationsOpen(!notificationsOpen)}
+                                    className="relative p-2 text-zinc-400 hover:text-zinc-900 transition-colors"
+                                >
                                     <Icons.Bell />
                                     <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border-2 border-white" />
                                 </button>
+                                
+                                {notificationsOpen && (
+                                    <>
+                                        <div className="fixed inset-0 z-40" onClick={() => setNotificationsOpen(false)} />
+                                        <div className="absolute right-0 top-12 w-80 bg-white border border-zinc-200 rounded-3xl p-6 shadow-2xl z-50 animate-in fade-in slide-in-from-top-2 duration-300">
+                                            <div className="flex justify-between items-center mb-4 pb-3 border-b border-zinc-100">
+                                                <h4 className="text-xs font-black uppercase tracking-widest text-zinc-900">Notificaciones</h4>
+                                                <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">3 Nuevas</span>
+                                            </div>
+                                            <div className="space-y-4">
+                                                <div className="flex gap-3 text-left">
+                                                    <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+                                                        <Icons.Upload />
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-xs font-bold text-zinc-800">Carga de Datos Exitosa</p>
+                                                        <p className="text-[10px] text-zinc-500 mt-0.5 font-medium leading-tight">Se procesaron 53 registros de Ventas para mayo 2026.</p>
+                                                    </div>
+                                                </div>
+                                                <div className="flex gap-3 text-left">
+                                                    <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+                                                        <Icons.Tax />
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-xs font-bold text-zinc-800">Cálculo de IVA Actualizado</p>
+                                                        <p className="text-[10px] text-zinc-500 mt-0.5 font-medium leading-tight">Se recalcularon los débitos y créditos del período.</p>
+                                                    </div>
+                                                </div>
+                                                <div className="flex gap-3 text-left">
+                                                    <div className="w-8 h-8 rounded-lg bg-zinc-100 text-zinc-600 flex items-center justify-center shrink-0">
+                                                        <Icons.Settings />
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-xs font-bold text-zinc-800">Membresía Sincronizada</p>
+                                                        <p className="text-[10px] text-zinc-500 mt-0.5 font-medium leading-tight">Acceso activo en versión Premium v3.0.</p>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </>
+                                )}
                                 <div className="flex items-center gap-3 pl-2 group cursor-pointer">
                                     <div className="text-right hidden sm:block">
                                         <p className="text-sm font-bold text-zinc-900 leading-none">
@@ -578,6 +625,7 @@ export default function DashboardPage() {
                                 {availableYears.length > 0 && (
                                     <div className="relative">
                                         <select
+                                            id="year-select-dropdown"
                                             value={selectedYear || ""}
                                             onChange={(e) => setSelectedYear(Number(e.target.value))}
                                             className="appearance-none bg-white border border-zinc-200 text-zinc-900 pl-6 pr-10 py-3 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-zinc-50 transition-all shadow-sm focus:outline-hidden cursor-pointer"
@@ -591,12 +639,25 @@ export default function DashboardPage() {
                                         </div>
                                     </div>
                                 )}
-                                <button className="bg-white border border-zinc-200 text-zinc-900 px-6 py-3 rounded-xl text-xs font-black uppercase tracking-widest flex items-center gap-3 hover:bg-zinc-50 transition-all shadow-sm">
+                                <button 
+                                    onClick={() => {
+                                        const selectDropdown = document.getElementById("year-select-dropdown");
+                                        if (selectDropdown) selectDropdown.focus();
+                                    }}
+                                    className="bg-white border border-zinc-200 text-zinc-900 px-6 py-3 rounded-xl text-xs font-black uppercase tracking-widest flex items-center gap-3 hover:bg-zinc-50 transition-all shadow-sm focus:outline-hidden"
+                                    title="Haz clic para seleccionar el año fiscal en el menú adjunto"
+                                >
                                     <Icons.Calendar />
                                     {currentPeriodLabel}
                                 </button>
                                 <button 
                                     disabled={isTrialExpired}
+                                    onClick={() => {
+                                        const promptMsg = persona === 'business'
+                                            ? "Hola, me gustaría registrar un nuevo movimiento financiero. ¿Cómo puedo hacerlo?"
+                                            : "Hola, quiero registrar una nueva factura de venta/compra en el sistema. ¿Me ayudas?";
+                                        window.dispatchEvent(new CustomEvent('open-ai-chat', { detail: { message: promptMsg } }));
+                                    }}
                                     className={`px-6 py-3 rounded-xl text-xs font-black uppercase tracking-widest flex items-center gap-3 transition-all shadow-lg ${
                                         isTrialExpired 
                                         ? 'bg-zinc-200 text-zinc-400 cursor-not-allowed shadow-none'
@@ -663,16 +724,29 @@ export default function DashboardPage() {
                                             </div>
                                             <h3 className="text-lg font-black text-amber-800 mb-2">No hay datos financieros</h3>
                                             <p className="text-amber-700 text-sm max-w-md mx-auto">
-                                                Aún no se han cargado registros para este período. 
-                                                Cambia a la vista <strong>Cumplimiento Fiscal</strong> y sube un archivo CSV 
-                                                con los anexos de Hacienda (F07).
+                                                {isAccountantOrAdmin
+                                                    ? 'Aún no se han cargado registros para este período. Cambia a la vista Cumplimiento Fiscal y sube un archivo CSV con los anexos de Hacienda (F07).'
+                                                    : 'Aún no se han cargado registros para este período. Por favor, solicita a tu contador o administrador de la plataforma que realice la carga de los anexos IVA (F07).'}
                                             </p>
-                                            <button
-                                                onClick={() => { setPersona('fiscal'); setActiveTab('companies'); }}
-                                                className="mt-6 bg-amber-600 text-white px-6 py-3 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-amber-700 transition-all"
-                                            >
-                                                Ir a Carga de Datos
-                                            </button>
+                                            {isAccountantOrAdmin ? (
+                                                <button
+                                                    onClick={() => { setPersona('fiscal'); setActiveTab('companies'); }}
+                                                    className="mt-6 bg-amber-600 text-white px-6 py-3 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-amber-700 transition-all"
+                                                >
+                                                    Ir a Carga de Datos
+                                                </button>
+                                            ) : (
+                                                <button
+                                                    onClick={() => {
+                                                        window.dispatchEvent(new CustomEvent('open-ai-chat', {
+                                                            detail: { message: "Hola, veo que no hay datos financieros cargados en mi portal. ¿Cómo puedo solicitar la carga de mis anexos IVA o qué debo indicarle a mi contador?" }
+                                                        }));
+                                                    }}
+                                                    className="mt-6 bg-emerald-600 text-white px-6 py-3 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-emerald-700 transition-all shadow-md"
+                                                >
+                                                    Preguntar al Asistente IA
+                                                </button>
+                                            )}
                                         </div>
                                     )}
 

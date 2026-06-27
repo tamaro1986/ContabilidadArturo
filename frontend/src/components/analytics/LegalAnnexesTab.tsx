@@ -69,6 +69,8 @@ export default function LegalAnnexesTab() {
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState("");
     const [error, setError] = useState("");
+    const [showFilters, setShowFilters] = useState(false);
+    const [filterType, setFilterType] = useState<'all' | 'high_value' | 'exento' | 'no_nit'>('all');
 
 
 
@@ -96,16 +98,91 @@ export default function LegalAnnexesTab() {
     }, [activeAnnex]);
 
     const filteredRecords = useMemo(() => {
-        if (!searchTerm) return records;
-        const lowSearch = searchTerm.toLowerCase();
-        return records.filter(r => r.nombre?.toLowerCase().includes(lowSearch) || r.nit_dui?.includes(searchTerm) || r.numero?.includes(searchTerm));
-    }, [records, searchTerm]);
+        let result = records;
+        if (searchTerm) {
+            const lowSearch = searchTerm.toLowerCase();
+            result = result.filter(r => r.nombre?.toLowerCase().includes(lowSearch) || r.nit_dui?.includes(searchTerm) || r.numero?.includes(searchTerm));
+        }
+        if (filterType === 'high_value') {
+            result = result.filter(r => r.total > 1000);
+        } else if (filterType === 'exento') {
+            result = result.filter(r => (r.exento || 0) > 0);
+        } else if (filterType === 'no_nit') {
+            result = result.filter(r => !r.nit_dui || r.nit_dui.trim() === '' || r.nit_dui === '0' || r.nit_dui.toLowerCase() === 'n/a');
+        }
+        return result;
+    }, [records, searchTerm, filterType]);
 
     const totals = useMemo(() => filteredRecords.reduce((acc, curr) => ({
         gravado: acc.gravado + curr.gravado, iva: acc.iva + (curr.iva || 0), total: acc.total + curr.total, exento: acc.exento + (curr.exento || 0), isr: acc.isr + (curr.isr || 0)
     }), { gravado: 0, iva: 0, total: 0, exento: 0, isr: 0 }), [filteredRecords]);
 
     const activeConfig = annexConfig[activeAnnex];
+
+    const handleExportCSV = () => {
+        if (records.length === 0) {
+            alert("No hay registros para exportar.");
+            return;
+        }
+
+        const activeConfig = annexConfig[activeAnnex];
+        let headers: string[] = [];
+        let rows: any[][] = [];
+
+        if (activeAnnex === '14') {
+            headers = ["Fecha", "Documento", "Clase Doc", "NIT/DUI", "Nombre / Razon Social", "AFP", "ISSS", "Ret. ISR", "Total"];
+            rows = records.map(r => [
+                r.fecha || '',
+                r.numero || '',
+                r.clase_doc || '01',
+                r.nit_dui || '',
+                `"${(r.nombre || '').replace(/"/g, '""')}"`,
+                r.afp || 0,
+                r.isss || 0,
+                r.isr || 0,
+                r.total || 0
+            ]);
+        } else if (activeAnnex === '2') {
+            headers = ["Fecha", "Documento", "Clase Doc", "NIT/DUI", "Nombre / Razon Social", "Resolucion", "Exento", "Gravado", "IVA/Debito", "Total"];
+            rows = records.map(r => [
+                r.fecha || '',
+                r.numero || '',
+                r.clase_doc || '01',
+                r.nit_dui || '',
+                `"${(r.nombre || '').replace(/"/g, '""')}"`,
+                r.resolucion || '001-TP',
+                r.exento || 0,
+                r.gravado || 0,
+                r.iva || 0,
+                r.total || 0
+            ]);
+        } else {
+            headers = ["Fecha", "Documento", "Clase Doc", "NIT/DUI", "Nombre / Razon Social", "Exento", "Gravado", "IVA", "Total"];
+            rows = records.map(r => [
+                r.fecha || '',
+                r.numero || '',
+                r.clase_doc || '01',
+                r.nit_dui || '',
+                `"${(r.nombre || '').replace(/"/g, '""')}"`,
+                r.exento || 0,
+                r.gravado || 0,
+                r.iva || 0,
+                r.total || 0
+            ]);
+        }
+
+        const csvContent = "\uFEFF" + [headers.join(","), ...rows.map(e => e.join(","))].join("\n");
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        const url = URL.createObjectURL(blob);
+        const fileName = `anexo_${activeAnnex}_${activeConfig.title.toLowerCase().replace(/[^a-z0-9]/g, '_')}.csv`;
+        link.setAttribute('href', url);
+        link.setAttribute('download', fileName);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
 
     return (
         <div className="space-y-6 max-w-spacing-200 mx-auto pb-20">
@@ -124,11 +201,54 @@ export default function LegalAnnexesTab() {
                         </div>
                     </div>
                     <div className="flex flex-wrap gap-3 w-full xl:w-auto">
-                        <button className="flex-1 xl:flex-none flex items-center justify-center gap-2 px-6 py-3 bg-surface-container-lowest hover:bg-surface-container-low text-primary border border-outline rounded-md transition-all text-xs font-bold uppercase tracking-wider"><FilterIcon size={16} /> Filtros Legales</button>
-                        <button className="flex-1 xl:flex-none flex items-center justify-center gap-2 px-8 py-3 bg-secondary hover:opacity-90 text-on-secondary rounded-md shadow-md transition-all text-xs font-bold uppercase tracking-wider"><DownloadIcon size={16} /> Exportar Anexo CSV</button>
+                        <button 
+                            onClick={() => setShowFilters(!showFilters)}
+                            className={`flex-1 xl:flex-none flex items-center justify-center gap-2 px-6 py-3 border rounded-md transition-all text-xs font-bold uppercase tracking-wider ${
+                                showFilters 
+                                    ? 'bg-primary text-on-primary border-primary shadow-md' 
+                                    : 'bg-surface-container-lowest hover:bg-surface-container-low text-primary border-outline'
+                            }`}
+                        >
+                            <FilterIcon size={16} /> Filtros Legales
+                        </button>
+                        <button 
+                            onClick={handleExportCSV}
+                            className="flex-1 xl:flex-none flex items-center justify-center gap-2 px-8 py-3 bg-secondary hover:opacity-90 text-on-secondary rounded-md shadow-md transition-all text-xs font-bold uppercase tracking-wider"
+                        >
+                            <DownloadIcon size={16} /> Exportar Anexo CSV
+                        </button>
                     </div>
                 </div>
             </div>
+
+            {/* Panel de Filtros Legales */}
+            {showFilters && (
+                <div className="bg-surface-container-lowest border border-outline-variant p-6 rounded-md shadow-sm flex flex-wrap gap-4 items-center justify-between animate-in fade-in slide-in-from-top-2 duration-300">
+                    <div className="flex flex-wrap gap-2">
+                        {[
+                            { id: 'all', label: 'Todos los registros' },
+                            { id: 'high_value', label: 'Montos > $1,000' },
+                            { id: 'exento', label: 'Con Exenciones' },
+                            { id: 'no_nit', label: 'Sin NIT/DUI Válido' }
+                        ].map(f => (
+                            <button
+                                key={f.id}
+                                onClick={() => setFilterType(f.id as any)}
+                                className={`px-4 py-2 text-xs font-bold rounded-sm border transition-all ${
+                                    filterType === f.id
+                                        ? 'bg-primary text-on-primary border-primary shadow-sm'
+                                        : 'bg-surface-container hover:bg-surface-dim text-on-surface-variant border-outline'
+                                }`}
+                            >
+                                {f.label}
+                            </button>
+                        ))}
+                    </div>
+                    <div className="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">
+                        Filtrados: <span className="text-primary font-black">{filteredRecords.length}</span> / {records.length}
+                    </div>
+                </div>
+            )}
 
             {/* 2. ANNEX TABS */}
             <div className="flex flex-wrap items-center gap-2 bg-surface-container p-1 rounded-md border border-outline-variant">
