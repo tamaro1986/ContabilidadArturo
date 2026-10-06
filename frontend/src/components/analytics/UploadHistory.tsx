@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState, useCallback } from 'react';
 import { fetchWithAuth } from "@/lib/api";
+import { getErrorMessage } from "@/lib/errors";
 
 interface UploadRecord {
   id: string;
@@ -239,8 +240,8 @@ export default function UploadHistory({
                         try {
                           await fetchWithAuth(`/financial/uploads/${record.id}`, { method: 'DELETE' });
                           fetchHistory();
-                        } catch (e: any) {
-                          alert('Error al eliminar: ' + e.message);
+                        } catch (e: unknown) {
+                          alert(getErrorMessage(e, 'No se pudo eliminar la carga.'));
                         }
                       }}
                       className="text-zinc-300 hover:text-red-500 transition-colors p-1"

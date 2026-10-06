@@ -1,9 +1,15 @@
+import logging
 from enum import Enum
-from fastapi import Depends, HTTPException, status, Request
-from supabase import Client
-from app.core.security import get_current_user
-from app.services.supabase_client import get_supabase_client
+from typing import Any, TypedDict
+
+from fastapi import Depends, Request, status
+
 from app.core.config import settings
+from app.core.errors import ApiException
+from app.core.security import AuthenticatedSession, get_authenticated_session
+
+logger = logging.getLogger(__name__)
+
 
 class UserRole(str, Enum):
     ADMIN = "administrador"
@@ -11,12 +17,18 @@ class UserRole(str, Enum):
     VIEWER = "viewer"
     OWNER = "owner"
 
-def get_tenant_from_request(request: Request):
+
+class UserContext(TypedDict):
+    user: Any | None
+    tenant_id: str
+    role: str
+
+
+def get_tenant_from_request(request: Request) -> str | None:
     if settings.MOCK_MODE:
-        mock_id = request.headers.get("X-Mock-Tenant-ID")
-        if mock_id:
-            return mock_id
+        return request.headers.get("X-Mock-Tenant-ID")
     return None
+
 
 class RoleChecker:
     def __init__(self, allowed_roles: list[UserRole]):
@@ -25,66 +37,78 @@ class RoleChecker:
     def __call__(
         self,
         request: Request,
-        supabase: Client = Depends(get_supabase_client)
-    ):
-        if supabase is None:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Supabase client is not configured on the server. Check SUPABASE_URL and SUPABASE_KEY/SUPABASE_ANON_KEY."
-            )
-
+        session: AuthenticatedSession = Depends(get_authenticated_session),
+    ) -> UserContext:
         mock_tenant_id = get_tenant_from_request(request)
         if mock_tenant_id:
-            return {"user": None, "tenant_id": mock_tenant_id, "role": "administrador"}
-            
-        # Peticion a la base de datos para obtener el perfil del usuario activo
-        # Manualmente llamamos a get_current_user o extraemos el token
-        auth_header = request.headers.get("Authorization")
-        if not auth_header or not auth_header.startswith("Bearer "):
-            raise HTTPException(status_code=401, detail="Not authenticated")
-            
-        token = auth_header.split(" ")[1]
-        try:
-            res = supabase.auth.get_user(token)
-            if not res.user:
-                raise HTTPException(status_code=401, detail="Invalid token")
-            current_user = res.user
-            supabase.postgrest.auth(token)
-        except Exception as e:
-            raise HTTPException(status_code=401, detail=str(e))
+            return {
+                "user": None,
+                "tenant_id": mock_tenant_id,
+                "role": UserRole.ADMIN.value,
+            }
 
-        try:
-            profile_res = supabase.table("user_profiles").select("role, tenant_id").eq("id", current_user.id).single().execute()
-
-            if not profile_res.data:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Perfil de usuario no encontrado."
-                )
-
-            user_role = profile_res.data.get("role")
-            tenant_id = profile_res.data.get("tenant_id")
-
-            if user_role not in [role.value for role in self.allowed_roles]:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail=f"No tienes permisos suficientes. Se requiere uno de los siguientes roles: {[r.value for r in self.allowed_roles]}"
-                )
-
-            return {"user": current_user, "tenant_id": tenant_id, "role": user_role}
-        except HTTPException:
-            raise
-        except Exception as e:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Error validando rol: {str(e)}"
+        current_user = session["user"]
+        supabase = session["supabase"]
+        if current_user is None or supabase is None:
+            raise ApiException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                code="AUTH_REQUIRED",
+                detail="Autenticación requerida.",
             )
 
-# Dependencias especificas para uso comun
-require_admin = RoleChecker([UserRole.ADMIN])
-require_contador = RoleChecker([UserRole.CONTADOR, UserRole.ADMIN, UserRole.OWNER])
-require_owner = RoleChecker([UserRole.OWNER, UserRole.ADMIN])
-require_viewer = RoleChecker([UserRole.VIEWER, UserRole.CONTADOR, UserRole.OWNER, UserRole.ADMIN])
+        try:
+            profile_response = (
+                supabase.table("user_profiles")
+                .select("role, tenant_id")
+                .eq("id", current_user.id)
+                .single()
+                .execute()
+            )
+        except Exception:
+            logger.exception("No se pudo obtener el perfil RBAC del usuario")
+            raise ApiException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                code="PROFILE_LOOKUP_FAILED",
+                detail="No se pudo validar el perfil del usuario.",
+            )
 
-# Alias para compatibilidad con rutas existentes
+        if not profile_response.data:
+            raise ApiException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                code="PROFILE_NOT_FOUND",
+                detail="Perfil de usuario no encontrado.",
+            )
+
+        user_role = profile_response.data.get("role")
+        tenant_id = profile_response.data.get("tenant_id")
+        allowed_values = {role.value for role in self.allowed_roles}
+
+        if user_role not in allowed_values:
+            raise ApiException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                code="ROLE_FORBIDDEN",
+                detail="No tienes permisos suficientes para realizar esta acción.",
+            )
+        if not tenant_id:
+            raise ApiException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                code="TENANT_REQUIRED",
+                detail="El usuario no tiene un tenant asignado.",
+            )
+
+        return {
+            "user": current_user,
+            "tenant_id": str(tenant_id),
+            "role": str(user_role),
+        }
+
+
+require_admin = RoleChecker([UserRole.ADMIN])
+require_contador = RoleChecker(
+    [UserRole.CONTADOR, UserRole.ADMIN, UserRole.OWNER]
+)
+require_owner = RoleChecker([UserRole.OWNER, UserRole.ADMIN])
+require_viewer = RoleChecker(
+    [UserRole.VIEWER, UserRole.CONTADOR, UserRole.OWNER, UserRole.ADMIN]
+)
 require_cliente = require_viewer

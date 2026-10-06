@@ -127,7 +127,7 @@ export default function LegalAnnexesTab() {
 
         const activeConfig = annexConfig[activeAnnex];
         let headers: string[] = [];
-        let rows: any[][] = [];
+        let rows: Array<Array<string | number>> = [];
 
         if (activeAnnex === '14') {
             headers = ["Fecha", "Documento", "Clase Doc", "NIT/DUI", "Nombre / Razon Social", "AFP", "ISSS", "Ret. ISR", "Total"];
@@ -233,7 +233,7 @@ export default function LegalAnnexesTab() {
                         ].map(f => (
                             <button
                                 key={f.id}
-                                onClick={() => setFilterType(f.id as any)}
+                                onClick={() => setFilterType(f.id as typeof filterType)}
                                 className={`px-4 py-2 text-xs font-bold rounded-sm border transition-all ${
                                     filterType === f.id
                                         ? 'bg-primary text-on-primary border-primary shadow-sm'

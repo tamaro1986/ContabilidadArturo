@@ -1,0 +1,15 @@
+.venv
+venv
+__pycache__
+*.py[cod]
+.pytest_cache
+.coverage
+htmlcov
+tests
+*.log
+.env
+.env.*
+!.env.example
+.git
+.gitignore
+graphify-out

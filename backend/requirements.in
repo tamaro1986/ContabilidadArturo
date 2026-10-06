@@ -1,0 +1,19 @@
+fastapi
+uvicorn[standard]
+duckdb
+psycopg2-binary
+python-multipart
+supabase
+python-dotenv
+pydantic[email]
+pydantic-settings
+python-magic; sys_platform != "win32"
+python-magic-bin; sys_platform == "win32"
+celery
+redis
+gunicorn
+langchain
+langchain-openai
+langchain-community
+langchain-core
+aiofiles

@@ -1,0 +1,82 @@
+# ==============================================================================
+# Caddyfile - Reverse Proxy & SSL Automático para Contabilidad Arturo en VPS
+# ==============================================================================
+# Caddy gestiona certificados SSL de forma automática con Let's Encrypt / ZeroSSL.
+#
+# Variables de entorno:
+# - DOMAIN_NAME: Dominio raíz (ej. contabilidadarturo.com)
+# - EMAIL_ACME: Email para notificaciones de certificados SSL
+
+{
+    email {$EMAIL_ACME:admin@example.com}
+    admin off
+}
+
+# ------------------------------------------------------------------------------
+# 1. Subdominio Frontend: app.tudominio.com
+# ------------------------------------------------------------------------------
+{$APP_DOMAIN:app.contabilidadarturo.com} {
+    encode gzip zstd
+
+    # Cabeceras de seguridad recomendadas (OWASP)
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "SAMEORIGIN"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        Permissions-Policy "camera=(), microphone=(), geolocation=()"
+    }
+
+    reverse_proxy frontend:3000 {
+        header_up Host {host}
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+}
+
+# ------------------------------------------------------------------------------
+# 2. Subdominio Backend API: api.tudominio.com
+# ------------------------------------------------------------------------------
+{$API_DOMAIN:api.contabilidadarturo.com} {
+    encode gzip zstd
+
+    # Aumentar límites para uploads de archivos CSV y ZIP grandes
+    request_body {
+        max_size 50MB
+    }
+
+    # Cabeceras de seguridad
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        X-Content-Type-Options "nosniff"
+        Access-Control-Allow-Origin "https://{$APP_DOMAIN:app.contabilidadarturo.com}"
+        Access-Control-Allow-Methods "GET, POST, PUT, DELETE, PATCH, OPTIONS"
+        Access-Control-Allow-Headers "Authorization, Content-Type, Accept, X-Requested-With"
+    }
+
+    reverse_proxy backend:10000 {
+        header_up Host {host}
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+}
+
+# ------------------------------------------------------------------------------
+# 3. Subdominio Base de Datos / Supabase API: db.tudominio.com
+# ------------------------------------------------------------------------------
+{$DB_DOMAIN:db.contabilidadarturo.com} {
+    encode gzip zstd
+
+    request_body {
+        max_size 50MB
+    }
+
+    reverse_proxy kong:8000 {
+        header_up Host {host}
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+}

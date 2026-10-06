@@ -1,5 +1,4 @@
 services:
-  # Backend API (FastAPI)
   backend:
     build:
       context: ./backend
@@ -16,16 +15,35 @@ services:
       - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
       - CORS_ORIGINS=http://localhost:3000,https://contabilidad-arturo.vercel.app
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          urllib.request.urlopen('http://127.0.0.1:10000/health/ready', timeout=5)
+      interval: 15s
+      timeout: 6s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
     networks:
       - app-network
 
-  # Celery Worker for Background Tasks
   worker:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    command: celery -A app.core.celery_app worker --loglevel=info
+    command:
+      - celery
+      - -A
+      - app.core.celery_app:celery_app
+      - worker
+      - --loglevel=info
+      - --queues=main-queue
     environment:
       - MOCK_MODE=False
       - REDIS_URL=redis://redis:6379/0
@@ -35,28 +53,64 @@ services:
       - SUPABASE_KEY=${SUPABASE_KEY}
       - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
     depends_on:
-      - redis
-      - backend
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - celery -A app.core.celery_app:celery_app inspect ping --timeout=5
+      interval: 20s
+      timeout: 8s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
     networks:
       - app-network
 
-  # Frontend (Next.js)
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:10000/api/v1}
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:-}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}
     ports:
       - "3000:3000"
     environment:
       - NEXT_PUBLIC_API_URL=http://localhost:10000/api/v1
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - >-
+          fetch('http://127.0.0.1:3000').then(r => {
+            if (!r.ok) process.exit(1)
+          }).catch(() => process.exit(1))
+      interval: 20s
+      timeout: 8s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
     networks:
       - app-network
 
-  # Redis for Caching and Celery Broker
   redis:
-    image: redis:alpine
+    image: redis:7.4-alpine
     ports:
       - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
     networks:
       - app-network
 

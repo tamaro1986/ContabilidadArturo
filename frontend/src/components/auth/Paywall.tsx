@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
+import { getErrorMessage } from '@/lib/errors';
 
 interface PaywallProps {
   tenantId: string;
@@ -51,8 +52,8 @@ export default function Paywall({ tenantId, onSuccess }: PaywallProps) {
         onSuccess();
       }, 2000);
 
-    } catch (err: any) {
-      setError(err.message || 'Error al aplicar el código.');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Error al aplicar el código.'));
     } finally {
       setIsLoading(false);
     }

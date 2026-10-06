@@ -26,17 +26,15 @@ export default function CustomerDetailSlideOver({ customer, isOpen, onClose }: C
     const [mounted, setMounted] = useState(isOpen);
 
     useEffect(() => {
-        if (isOpen) {
-            setMounted(true);
-            document.body.style.overflow = 'hidden';
-        } else {
+        const timer = window.setTimeout(
+            () => setMounted(isOpen),
+            isOpen ? 0 : 500,
+        );
+        document.body.style.overflow = isOpen ? 'hidden' : 'unset';
+        return () => {
+            window.clearTimeout(timer);
             document.body.style.overflow = 'unset';
-            const timer = setTimeout(() => setMounted(false), 500);
-            return () => {
-                clearTimeout(timer);
-                document.body.style.overflow = 'unset';
-            };
-        }
+        };
     }, [isOpen]);
 
     if (!mounted && !isOpen) return null;

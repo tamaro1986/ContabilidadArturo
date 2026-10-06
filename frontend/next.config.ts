@@ -1,13 +1,18 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  output: 'standalone',
+  output: "standalone",
   async rewrites() {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.replace(/\/$/, "");
+
+    if (!supabaseUrl) {
+      return [];
+    }
+
     return [
       {
-        source: '/supabase-api/:path*',
-        // Enmascara las peticiones a Supabase pasándolas por el servidor de Vercel
-        destination: `${process.env.NEXT_PUBLIC_SUPABASE_URL}/:path*`,
+        source: "/supabase-api/:path*",
+        destination: `${supabaseUrl}/:path*`,
       },
     ];
   },

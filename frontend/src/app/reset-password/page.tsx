@@ -3,12 +3,10 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { resetPassword } from '@/lib/api'
+import { getErrorMessage } from '@/lib/errors'
 import { supabase } from '@/lib/supabaseClient'
 
 // ── Inline SVG Icons ───────────────────────────────────────────────────────────
-const ShieldCheck = ({ size = 32, className = "" }: { size?: number; className?: string }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
-);
 const Lock = ({ size = 20, className = "" }: { size?: number; className?: string }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={className}><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
 );
@@ -73,8 +71,8 @@ export default function ResetPasswordPage() {
       setTimeout(() => {
         router.push('/login')
       }, 3000)
-    } catch (err: any) {
-      setError(err.message)
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'No se pudo actualizar la contraseña.'))
       setLoading(false)
     }
   }

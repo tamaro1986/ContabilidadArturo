@@ -1,5 +1,5 @@
 # Dockerfile para el Frontend de ContabilidadArturo (Next.js Standalone)
-FROM node:20-alpine AS base
+FROM node:24-alpine AS base
 
 # 1. Instalar dependencias solo cuando sea necesario
 FROM base AS deps
@@ -13,6 +13,14 @@ RUN npm ci
 # 2. Reconstruir el código fuente solo cuando sea necesario
 FROM base AS builder
 WORKDIR /app
+
+ARG NEXT_PUBLIC_API_URL=http://localhost:10000/api/v1
+ARG NEXT_PUBLIC_SUPABASE_URL
+ARG NEXT_PUBLIC_SUPABASE_ANON_KEY
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL
+ENV NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY
+
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 

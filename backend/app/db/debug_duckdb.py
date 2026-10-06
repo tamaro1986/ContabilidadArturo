@@ -1,7 +1,6 @@
 import duckdb
 import os
 import sys
-from dotenv import load_dotenv
 
 # Asegurar que el path del backend esté en sys.path para importar settings
 sys.path.append(os.getcwd())

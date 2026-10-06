@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useState, Suspense } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useState, Suspense } from "react";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import { getErrorMessage } from "@/lib/errors";
 
 function SetPasswordContent() {
     const router = useRouter();
-    const searchParams = useSearchParams();
     const [password, setPassword] = useState("");
     const [confirmPassword, setConfirmPassword] = useState("");
     const [loading, setLoading] = useState(false);
@@ -35,8 +35,8 @@ function SetPasswordContent() {
 
             // Password updated successfully, redirect to dashboard
             router.push("/dashboard");
-        } catch (err: any) {
-            setError(err.message || "Error al actualizar la contraseña");
+        } catch (err: unknown) {
+            setError(getErrorMessage(err, "Error al actualizar la contraseña"));
         } finally {
             setLoading(false);
         }

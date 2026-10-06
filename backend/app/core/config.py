@@ -1,6 +1,6 @@
-import os
 from pathlib import Path
-from typing import List
+from typing import List, Union
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Compute absolute path to .env relative to this file (backend/app/core/config.py → backend/.env)
@@ -31,7 +31,7 @@ class Settings(BaseSettings):
     MOCK_MODE: bool = False
     
     # Seguridad (CORS)
-    CORS_ORIGINS: List[str] = [
+    CORS_ORIGINS: Union[List[str], str] = [
         "https://contabilidadarturo.vercel.app",
         "https://contabilidad-arturo.vercel.app",
         "http://localhost:3000",
@@ -40,6 +40,19 @@ class Settings(BaseSettings):
         "http://127.0.0.1:3001",
         "http://localhost:8000",
     ]
+
+    @field_validator("CORS_ORIGINS", mode="after")
+    @classmethod
+    def assemble_cors_origins(cls, v: Union[str, List[str]]) -> List[str]:
+        if isinstance(v, str):
+            if v.startswith("[") and v.endswith("]"):
+                import json
+                try:
+                    return json.loads(v)
+                except Exception:
+                    pass
+            return [i.strip() for i in v.split(",") if i.strip()]
+        return v
     
     CORS_ORIGIN_REGEX: str = r"https://contabilidad-?arturo.*\.vercel\.app"
 

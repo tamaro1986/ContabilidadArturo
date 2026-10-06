@@ -52,7 +52,7 @@ export default function CompanyManager({
         setIsModalOpen(false);
         setNewName('');
         setNewNit('');
-      } catch (err) {
+      } catch {
         // El error ya se maneja en el padre usualmente, pero aquí evitamos cerrar el modal
       } finally {
         setIsSubmitting(false);

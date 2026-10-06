@@ -123,7 +123,7 @@ def anomalies_summary(
 
     try:
         # Asegurar columnas y lazy init si hace falta
-        from app.services.anomaly_engine import _ensure_anomaly_columns, get_anomalies
+        from app.services.anomaly_engine import _ensure_anomaly_columns
         _ensure_anomaly_columns(duck_con)
 
         count_check = duck_con.execute(

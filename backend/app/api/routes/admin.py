@@ -3,7 +3,6 @@ from pydantic import BaseModel
 from supabase import Client
 from app.services.supabase_client import get_supabase_client
 from app.api.dependencies.roles import require_admin
-import uuid
 from typing import List
 from datetime import datetime
 

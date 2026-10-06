@@ -2,17 +2,41 @@
 
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabaseClient';
+import { getErrorMessage } from '@/lib/errors';
+
+interface PromoCode {
+  id: string;
+  code: string;
+  days_granted: number;
+  is_active: boolean;
+  tenant_id: string | null;
+  created_at: string;
+}
+
+interface AdminTenant {
+  id: string;
+  name: string;
+  trial_ends_at: string;
+}
+
+interface AdminUser {
+  id: string;
+  tenant_id: string;
+  full_name: string;
+  email: string;
+  role: string;
+}
 
 export default function AdminPanel() {
-  const [promoCodes, setPromoCodes] = useState<any[]>([]);
-  const [tenants, setTenants] = useState<any[]>([]);
-  const [users, setUsers] = useState<any[]>([]);
+  const [promoCodes, setPromoCodes] = useState<PromoCode[]>([]);
+  const [tenants, setTenants] = useState<AdminTenant[]>([]);
+  const [users, setUsers] = useState<AdminUser[]>([]);
   const [expandedTenant, setExpandedTenant] = useState<string | null>(null);
   const [newCode, setNewCode] = useState('');
   const [newDays, setNewDays] = useState(30);
   const [newTenantId, setNewTenantId] = useState('');
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [, setError] = useState<string | null>(null);
 
   const fetchData = async () => {
     setIsLoading(true);
@@ -34,7 +58,8 @@ export default function AdminPanel() {
   };
 
   useEffect(() => {
-    fetchData();
+    const timer = window.setTimeout(() => void fetchData(), 0);
+    return () => window.clearTimeout(timer);
   }, []);
 
   const handleCreateCode = async (e: React.FormEvent) => {
@@ -53,8 +78,8 @@ export default function AdminPanel() {
       
       setNewCode('');
       fetchData();
-    } catch (err: any) {
-      alert(err.message);
+    } catch (err: unknown) {
+      alert(getErrorMessage(err));
     }
   };
 
@@ -62,7 +87,7 @@ export default function AdminPanel() {
     try {
       await supabase.from('promo_codes').update({ is_active: !currentStatus }).eq('id', id);
       fetchData();
-    } catch (err) {
+    } catch {
       alert('Error al actualizar código.');
     }
   };
@@ -83,8 +108,8 @@ export default function AdminPanel() {
       if (error) throw error;
       
       fetchData();
-    } catch (err: any) {
-      alert('Error al extender la membresía: ' + err.message);
+    } catch (err: unknown) {
+      alert(getErrorMessage(err, 'Error al extender la membresía.'));
     }
   };
 

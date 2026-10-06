@@ -1,8 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabaseClient";
-import { fetchWithAuth } from "@/lib/api";
+import { useState } from "react";
 import AuthGuard from "../../components/auth/AuthGuard";
 import TaxLiquidationCard from "../../components/analytics/TaxLiquidationCard";
 
@@ -11,11 +9,6 @@ import ProfitabilityChart from "../../components/analytics/ProfitabilityChart";
 import TypesBreakdownChart from "../../components/analytics/TypesBreakdownChart";
 import LegalAnnexesTab from "../../components/analytics/LegalAnnexesTab";
 import AiChatWidget from "../../components/ai/AiChatWidget";
-import { 
-    TrendData, 
-    BreakdownData, 
-    TaxData 
-} from "@/types/analytics";
 import CustomerAnalysisTable from "../../components/analytics/CustomerAnalysisTable";
 import CustomerDetailSlideOver from "../../components/analytics/CustomerDetailSlideOver";
 import CustomerRevenueTreemap from '@/components/analytics/CustomerRevenueTreemap';
@@ -25,16 +18,20 @@ import SupplierExpenseTreemap from "../../components/analytics/SupplierExpenseTr
 import SupplierAnalysisTable from "../../components/analytics/SupplierAnalysisTable";
 import SupplierDetailSlideOver from "../../components/analytics/SupplierDetailSlideOver";
 import { SupplierRecord } from "@/types/supplierAnalysis";
+import type { Company } from "@/types/companyTypes";
 
 import CompanyManager from "../../components/analytics/CompanyManager";
 import SmartCsvUploader from "../../components/analytics/SmartCsvUploader";
 import ValidationAlerts from "../../components/analytics/ValidationAlerts";
 import UploadHistory from "../../components/analytics/UploadHistory";
-import { Company, CsvValidationResult } from "@/types/companyTypes";
-import Paywall from "../../components/auth/Paywall";
 import AdminPanel from "../../components/admin/AdminPanel";
 import UserInvitationForm from "../../components/auth/UserInvitationForm";
 import MembershipPanel from "../../components/settings/MembershipPanel";
+import { useDashboardSession } from "@/hooks/useDashboardSession";
+import { useCompanies } from "@/hooks/useCompanies";
+import { useFinancialUploads } from "@/hooks/useFinancialUploads";
+import { useDashboardAnalytics } from "@/hooks/useDashboardAnalytics";
+import { getErrorMessage } from "@/lib/errors";
 
 // ── Icons (SVG Inline - Zero Dependencies - Premium Executive Set) ──────────────────────
 const Icons = {
@@ -106,256 +103,84 @@ export default function DashboardPage() {
     const [activeTab, setActiveTab] = useState('overview');
     const [sidebarOpen, setSidebarOpen] = useState(true);
     const [notificationsOpen, setNotificationsOpen] = useState(false);
-    
-    // Data States
-    const [trendsData, setTrendsData] = useState<TrendData[]>([]);
-    const [typesData, setTypesData] = useState<{ ventas: BreakdownData[]; gastos: BreakdownData[] } | null>(null);
-    const [taxData, setTaxData] = useState<TaxData | null>(null);
-    const [customerData, setCustomerData] = useState<CustomerRecord[]>([]);
-    const [supplierData, setSupplierData] = useState<SupplierRecord[]>([]);
     const [selectedCustomer, setSelectedCustomer] = useState<CustomerRecord | null>(null);
     const [selectedSupplier, setSelectedSupplier] = useState<SupplierRecord | null>(null);
-    const [authToken, setAuthToken] = useState("");
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
-
-    // Year selection
-    const [availableYears, setAvailableYears] = useState<number[]>([]);
-    const [selectedYear, setSelectedYear] = useState<number | null>(null);
-
-    // Customer Module State
     const [isSlideOverOpen, setIsSlideOverOpen] = useState(false);
-
-    // Supplier Module State
     const [isSupplierSlideOverOpen, setIsSupplierSlideOverOpen] = useState(false);
 
-    // Companies / Upload State
-    const [companiesList, setCompaniesList] = useState<Company[]>([]);
-    const [selectedCompanyForUpload, setSelectedCompanyForUpload] = useState<Company | null>(null);
-    const [validationResult, setValidationResult] = useState<CsvValidationResult | null>(null);
-    const [isUploading, setIsUploading] = useState(false);
-    const [uploadError, setUploadError] = useState<string | null>(null);
-    const [refreshHistory, setRefreshHistory] = useState(0);
+    const {
+        session,
+        userProfile,
+        isTrialExpired,
+        isAdmin,
+        loading: sessionLoading,
+        error: sessionError,
+        logout,
+    } = useDashboardSession();
+    const {
+        selectedCompanyForUpload,
+        setSelectedCompanyForUpload,
+        validationResult,
+        setValidationResult,
+        isUploading,
+        uploadError,
+        setUploadError,
+        refreshHistory,
+        processFile: handleProcessFile,
+        clearSelection,
+        refresh: refreshUploads,
+    } = useFinancialUploads();
+    const {
+        companiesList,
+        addCompany,
+        resetCompany,
+    } = useCompanies(userProfile, refreshHistory);
+    const {
+        trendsData,
+        typesData,
+        taxData,
+        customerData,
+        supplierData,
+        availableYears,
+        selectedYear,
+        setSelectedYear,
+        loading: analyticsLoading,
+        error: analyticsError,
+    } = useDashboardAnalytics(Boolean(session), refreshHistory);
 
-    // Trial / Admin State
-    const [userProfile, setUserProfile] = useState<any>(null);
-    const [session, setSession] = useState<any>(null);
-    const [tenantData, setTenantData] = useState<any>(null);
-    const [isTrialExpired, setIsTrialExpired] = useState(false);
-    const [isAdmin, setIsAdmin] = useState(false);
+    const loading = sessionLoading || (Boolean(session) && analyticsLoading);
+    const error = sessionError || analyticsError;
 
     const handleAddCompany = async (name: string, nit: string) => {
-        if (!userProfile?.tenant_id || !userProfile?.id) {
-            alert("No se pudo identificar su perfil o Tenant. \n\nEsto puede suceder si su usuario se registró antes de activar el sistema de roles. \n\nPor favor, contacte al administrador para vincular su cuenta o intente cerrar sesión y volver a entrar.");
-            return;
-        }
-
         try {
-            console.log("Registrando empresa para tenant:", userProfile.tenant_id);
-            const { data, error: insertError } = await supabase
-                .from('companies')
-                .insert([{
-                    tenant_id: userProfile.tenant_id,
-                    user_id: userProfile.id,
-                    name,
-                    nit
-                }])
-                .select()
-                .single();
-
-            if (insertError) {
-                console.error("Supabase error adding company:", insertError);
-                throw insertError;
-            }
-
-            if (data) {
-                const newCompany: Company = {
-                    ...data,
-                    status: 'active',
-                    totalRecords: 0
-                };
-                setCompaniesList(prev => [newCompany, ...prev]);
-                console.log("Empresa registrada exitosamente:", newCompany);
-                return data;
-            }
-        } catch (err: any) {
-            console.error("Error capturado en handleAddCompany:", err);
-            alert(`Error al registrar la empresa: ${err.message || 'Error desconocido'}`);
-            throw err; // Propagar para que el componente hijo (CompanyManager) detenga el loading
-        }
-    };
-
-    const handleProcessFile = async () => {
-        if (!validationResult?.file || !selectedCompanyForUpload) return;
-        
-        setIsUploading(true);
-        setUploadError(null);
-        
-        const formData = new FormData();
-        formData.append('file', validationResult.file);
-        formData.append('company_id', selectedCompanyForUpload.id);
-        formData.append('document_type', validationResult.detectedType || 'ventas-contribuyentes');
-        
-        try {
-            await fetchWithAuth('/financial/upload', {
-                method: 'POST',
-                body: formData,
-            });
-            
-            // Éxito: Limpiar estados
-            setValidationResult(null);
-            setSelectedCompanyForUpload(null);
-            setRefreshHistory(prev => prev + 1);
-            alert("¡Archivo procesado con éxito! El historial se actualizará en unos segundos.");
-        } catch (err: any) {
-            console.error("Upload error:", err);
-            setUploadError(err.message);
-        } finally {
-            setIsUploading(false);
+            await addCompany(name, nit);
+        } catch (caught: unknown) {
+            alert(getErrorMessage(caught, "No se pudo registrar la empresa."));
+            throw caught;
         }
     };
 
     const handleResetCompany = async (company: Company) => {
-        if (!confirm(`¿Estás seguro de eliminar TODOS los datos de "${company.name}"?\n\nEsto eliminará:\n- ${company.totalRecords || 0} registros financieros\n- Historial de cargas\n- Documentos fiscales\n\nEsta acción no se puede deshacer.`)) {
-            return;
-        }
+        const accepted = confirm(
+            `¿Está seguro de eliminar todos los datos de "${company.name}"? Esta acción no se puede deshacer.`,
+        );
+        if (!accepted) return;
         try {
-            await fetchWithAuth(`/financial/company/${company.id}/records`, {
-                method: 'DELETE',
-            });
-            setCompaniesList(prev => prev.map(c => 
-                c.id === company.id ? { ...c, totalRecords: 0, lastProcessedMonth: undefined } : c
-            ));
-            setSelectedCompanyForUpload(null);
-            setRefreshHistory(prev => prev + 1);
-            alert("Datos de la empresa eliminados correctamente.");
-        } catch (err: any) {
-            console.error("Reset error:", err);
-            alert(`Error al resetear: ${err.message}`);
+            await resetCompany(company);
+            clearSelection();
+            refreshUploads();
+        } catch (caught: unknown) {
+            alert(getErrorMessage(caught, "No se pudieron reiniciar los datos."));
         }
     };
 
     const handleLogout = async () => {
         try {
-            await supabase.auth.signOut();
-        } catch (err) {
-            console.error("Error al cerrar sesión:", err);
+            await logout();
+        } catch (caught: unknown) {
+            console.error("Error al cerrar sesión:", caught);
         }
     };
-
-    useEffect(() => {
-    const fetchAll = async () => {
-            try {
-                const { data: { session: currentSession } } = await supabase.auth.getSession();
-                if (!currentSession) {
-                    // No hay sesión - redirigir a login en vez de mostrar error
-                    if (typeof window !== 'undefined') {
-                        window.location.href = '/login';
-                    }
-                    return;
-                }
-                setSession(currentSession);
-
-                // 1. Fetch User Profile and Tenant
-                const { data: profile, error: profileError } = await supabase
-                    .from('user_profiles')
-                    .select('*, tenants(*)')
-                    .eq('id', currentSession.user.id)
-                    .single();
-
-                // Validación de Administrador Maestro (Independiente del Perfil en BD)
-                const userEmail = currentSession.user.email?.toLowerCase() || "";
-                const isMasterAdmin = userEmail === 'garcia.integrum1@gmail.com';
-                setIsAdmin(isMasterAdmin); // Activación inmediata por correo
-
-                if (profile) {
-                    console.log("Datos de Perfil cargados:", profile);
-                    setUserProfile(profile);
-                    setTenantData(profile.tenants);
-                    
-                    // Si el perfil dice que es administrador, también lo activamos
-                    if (profile.role === 'administrador') setIsAdmin(true);
-                    
-                    const trialEnds = new Date(profile.tenants.trial_ends_at);
-                    setIsTrialExpired(trialEnds < new Date());
-                } else {
-                    console.warn("No se encontró perfil para el usuario actual:", currentSession.user.id);
-                    if (!isMasterAdmin) {
-                        setError("Su perfil no ha sido inicializado correctamente. Por favor, intente cerrar sesión y volver a entrar, o contacte a soporte.");
-                    }
-                }
-
-                // 2. Fetch Companies
-                const { data: companies } = await supabase
-                    .from('companies')
-                    .select('*')
-                    .order('name');
-                
-                // Mapear snake_case de BD a camelCase del frontend
-                const mappedCompanies = (companies || []).map(c => ({
-                    ...c,
-                    status: c.status || 'active',
-                    totalRecords: c.total_records ?? 0,
-                    lastProcessedMonth: c.last_processed_month || undefined,
-                }));
-                setCompaniesList(mappedCompanies as any);
-
-                // Fetch Available Years
-                let currentYearToFetch = selectedYear;
-                try {
-                    const resYears = await fetchWithAuth('/analytics/years');
-                    const jsonYears = await resYears.json();
-                    if (jsonYears.status === 'success' && Array.isArray(jsonYears.data)) {
-                        setAvailableYears(jsonYears.data);
-                        if (jsonYears.data.length > 0 && !selectedYear) {
-                            currentYearToFetch = jsonYears.data[0];
-                            setSelectedYear(currentYearToFetch);
-                        }
-                    }
-                } catch (err) {
-                    console.error("Error loading available years:", err);
-                }
-
-                // 3. Fetch Analytics from Backend
-                const fetchAnalytics = async () => {
-                    const queryParams = currentYearToFetch ? `?year=${currentYearToFetch}` : '';
-                    const endpoints = [
-                        { url: `/analytics/financial-trends${queryParams}`, setter: (d: any) => setTrendsData(d || []) },
-                        { url: `/analytics/types-breakdown${queryParams}`, setter: (d: any) => setTypesData(d || { ventas: [], gastos: [] }) },
-                        { url: `/analytics/tax-summary/iva-liquidation${queryParams}`, setter: (d: any) => setTaxData((prev: any) => ({ ...(prev || { liquidation: null, topEntities: [], health: null }), liquidation: d })) },
-                        { url: `/analytics/tax-summary/top-entities${queryParams}`, setter: (d: any) => setTaxData((prev: any) => ({ ...(prev || { liquidation: null, topEntities: [], health: null }), topEntities: d })) },
-                        { url: `/analytics/tax-summary/document-health${queryParams}`, setter: (d: any) => setTaxData((prev: any) => ({ ...(prev || { liquidation: null, topEntities: [], health: null }), health: d })) },
-                        { url: `/analytics/rfm${queryParams}`, setter: (d: any) => setCustomerData(d || []) },
-                        { url: `/analytics/supplier-rfm${queryParams}`, setter: (d: any) => setSupplierData(d || []) },
-                    ];
-
-                    await Promise.all(endpoints.map(async ({ url, setter }) => {
-                        try {
-                            const res = await fetchWithAuth(url);
-                            const json = await res.json();
-                            setter(json.data);
-                        } catch (err) {
-                            console.error(`Error loading ${url}:`, err);
-                        }
-                    }));
-                };
-
-                await fetchAnalytics();
-
-            } catch (err: unknown) {
-                console.error("Fetch Error:", err);
-                setError("Error al cargar los datos del ecosistema.");
-            } finally {
-                setLoading(false);
-            }
-        };
-        fetchAll();
-    }, [refreshHistory, selectedYear]);
-
-    // ── Paywall Guard (Changed to Read-Only Banner in UI) ─────────────────────────
-    // if (isTrialExpired && !loading) {
-    //     return <Paywall tenantId={userProfile?.tenant_id} onSuccess={() => window.location.reload()} />;
-    // }
 
     if (loading) return (
         <div className="min-h-screen flex flex-col items-center justify-center bg-zinc-950 transition-colors duration-500">
@@ -704,7 +529,7 @@ export default function DashboardPage() {
                                                 </div>
                                                 <div>
                                                     <p className="text-sm font-black uppercase tracking-widest">¿Buscando el módulo de carga?</p>
-                                                    <p className="text-xs font-medium opacity-80">Cambie a la vista de "Cumplimiento Fiscal" en la parte superior para gestionar empresas y subir documentos.</p>
+                                                    <p className="text-xs font-medium opacity-80">Cambie a la vista de &quot;Cumplimiento Fiscal&quot; en la parte superior para gestionar empresas y subir documentos.</p>
                                                 </div>
                                             </div>
                                             <button 
@@ -1070,7 +895,7 @@ export default function DashboardPage() {
                                     >
                                         ← Volver a Configuración
                                     </button>
-                                    <UserInvitationForm token={authToken} />
+                                    <UserInvitationForm />
                                 </div>
                             )}
 
@@ -1173,9 +998,8 @@ export default function DashboardPage() {
                                         ← Volver a Configuración
                                     </button>
                                     <MembershipPanel 
-                                        trialEndsAt={userProfile?.tenants?.trial_ends_at || ''} 
-                                        tenantId={userProfile?.tenant_id} 
-                                        onRefresh={() => setRefreshHistory(prev => prev + 1)}
+                                        trialEndsAt={userProfile?.tenants?.trial_ends_at || ''}
+onRefresh={refreshUploads}
                                     />
                                 </div>
                             )}

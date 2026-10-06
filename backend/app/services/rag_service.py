@@ -1,5 +1,5 @@
 import logging
-from typing import Optional, Tuple, List, Dict, Any
+from typing import Optional, Tuple, List
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from app.core.config import settings
@@ -105,4 +105,4 @@ Respuesta Final:""")
 
     except Exception as e:
         logger.error(f"Error en el servicio RAG: {e}")
-        return f"Hubo un error técnico al procesar tu solicitud: {str(e)}", None, None
+        return "Hubo un error técnico al procesar tu solicitud.", None, None

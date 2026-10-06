@@ -1,10 +1,10 @@
 "use client";
 
 import React, { useState } from 'react';
-import { supabase } from '@/lib/supabaseClient';
 import { fetchWithAuth } from '@/lib/api';
+import { getErrorMessage } from '@/lib/errors';
 
-export default function MembershipPanel({ trialEndsAt, tenantId, onRefresh }: { trialEndsAt: string, tenantId: string, onRefresh: () => void }) {
+export default function MembershipPanel({ trialEndsAt, onRefresh }: { trialEndsAt: string, onRefresh: () => void }) {
     const [couponCode, setCouponCode] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -33,8 +33,8 @@ export default function MembershipPanel({ trialEndsAt, tenantId, onRefresh }: { 
                 onRefresh();
             }, 2000);
             
-        } catch (err: any) {
-            setError(err.message || 'Error al aplicar el cupón.');
+        } catch (err: unknown) {
+            setError(getErrorMessage(err, 'Error al aplicar el cupón.'));
         } finally {
             setIsLoading(false);
         }

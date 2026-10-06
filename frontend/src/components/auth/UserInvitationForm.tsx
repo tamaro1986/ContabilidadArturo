@@ -1,14 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { supabase } from "@/lib/supabaseClient";
 import { fetchWithAuth } from "@/lib/api";
+import { getErrorMessage } from "@/lib/errors";
 
-interface UserInvitationFormProps {
-    token: string;
-}
-
-export default function UserInvitationForm({ token }: UserInvitationFormProps) {
+export default function UserInvitationForm() {
     const [email, setEmail] = useState("");
     const [fullName, setFullName] = useState("");
     const [role, setRole] = useState("cliente");
@@ -37,8 +33,8 @@ export default function UserInvitationForm({ token }: UserInvitationFormProps) {
             setMessage({ type: 'success', text: "Invitación enviada exitosamente. El usuario recibirá un correo para configurar su contraseña." });
             setEmail("");
             setFullName("");
-        } catch (err: any) {
-            setMessage({ type: 'error', text: err.message });
+        } catch (err: unknown) {
+            setMessage({ type: 'error', text: getErrorMessage(err) });
         } finally {
             setLoading(false);
         }

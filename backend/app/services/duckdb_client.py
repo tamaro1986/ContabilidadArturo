@@ -1,9 +1,7 @@
 import duckdb
 import logging
-import re
 import psycopg2
 import psycopg2.extras
-from urllib.parse import urlparse, unquote
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)

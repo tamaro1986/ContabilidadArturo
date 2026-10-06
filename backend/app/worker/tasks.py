@@ -2,18 +2,19 @@ import csv
 import io
 import logging
 import re
-import uuid
 import zipfile
 from datetime import date, datetime
-from typing import Any
-import duckdb
-from app.services.supabase_client import get_supabase_admin_client
+from typing import Any, Iterator
+
+from app.core.celery_app import celery_app
+from app.core.upload_security import validated_archive_members
 from app.services.cache import invalidate_tenant_cache
+from app.services.supabase_client import get_supabase_admin_client
 
 logger = logging.getLogger(__name__)
 
-# --- Constantes Hacienda ---
 IVA_RATE = 0.13
+INSERT_BATCH_SIZE = 500
 ALLOWED_FILES = {
     "F07_ANEXO_CONTRIBUYENTES.csv",
     "F07_ANEXO_CONSUMIDOR_FINAL.csv",
@@ -24,30 +25,55 @@ ALLOWED_FILES = {
     "F14_ANEXO_Q25.csv",
 }
 
-# --- Utilidades Sanitización & Parseo (Ported from seeder.py) ---
+_LIBRO_HEADERS = {
+    "CONTRIBUYENTE": (
+        "FECHA_EMISION,CLASE_DOC,TIPO_DOC,NUM_RESOLUCION,SERIE,NUM_DOC,"
+        "NUM_CONTROL,NIT_CLIENTE,NOMBRE_CLIENTE,VENTAS_EXENTAS,"
+        "VENTAS_NO_SUJETAS,VENTAS_GRAVADAS,DEBITO_FISCAL,VENTAS_TERCEROS,"
+        "DEBITO_TERCEROS,TOTAL_VENTA,DUI_CLIENTE,TIPO_OPERACION,"
+        "TIPO_INGRESO,NUM_ANEXO"
+    ),
+    "CONSUMIDOR": (
+        "FECHA_EMISION,CLASE_DOC,TIPO_DOC,NUM_RESOLUCION,SERIE,"
+        "NUM_CONTROL_DESDE,NUM_CONTROL_HASTA,NUM_DOC_DESDE,NUM_DOC_HASTA,"
+        "NUM_MAQUINA,VENTAS_EXENTAS,VENTAS_INTERNAS_EXENTAS,"
+        "VENTAS_NO_SUJETAS,VENTAS_GRAVADAS,EXPORTACIONES_CENTROAMERICA,"
+        "EXPORTACIONES_FUERA_CENTROAMERICA,EXPORTACIONES_SERVICIO,"
+        "VENTAS_ZONAS_FRANCAS,VENTAS_TERCEROS,TOTAL_VENTAS,TIPO_OPERACION,"
+        "TIPO_INGRESO,NUM_ANEXO"
+    ),
+    "COMPRAS": (
+        "FECHA_EMISION,CLASE_DOC,TIPO_DOC,NUM_DOC,NIT_PROVEEDOR,"
+        "NOMBRE_PROVEEDOR,COMPRAS_INTERNAS_EXENTAS,INTERNACIONES_EXENTAS,"
+        "IMPORTACIONES_EXENTAS,COMPRAS_INTERNAS_GRAVADAS,"
+        "INTERNACIONES_GRAVADAS,IMPORTACIONES_GRAVADAS_BIENES,"
+        "IMPORTACIONES_GRAVADAS_SERVICIOS,CREDITO_FISCAL,TOTAL_COMPRAS,"
+        "DUI_PROVEEDOR,TIPO_OPERACION,CLASIFICACION,SECTOR,"
+        "TIPO_COSTO_GASTO,NUM_ANEXO"
+    ),
+}
 
-def _sanitize_cell(value: str) -> str:
+
+def _sanitize_cell(value: Any) -> str:
     if value is None:
         return ""
-    if not isinstance(value, str):
-        return str(value)
-    value = value.replace("\x00", "").strip()
-    if value and value[0] in ("=", "+", "-", "@", "\t", "\r"):
-        value = "'" + value
-    return value
+    text = str(value).replace("\x00", "").strip()
+    if text and text[0] in ("=", "+", "-", "@", "\t", "\r"):
+        return "'" + text
+    return text
+
 
 def _parse_date(raw: str) -> date:
     raw = (raw or "").strip()
     for fmt in ("%d/%m/%Y", "%m/%Y", "%Y-%m-%d"):
         try:
-            dt = datetime.strptime(raw, fmt).date()
-            return dt.replace(day=1) if fmt == "%m/%Y" else dt
+            parsed = datetime.strptime(raw, fmt).date()
+            return parsed.replace(day=1) if fmt == "%m/%Y" else parsed
         except ValueError:
             continue
-    # Handle non-padded days/months (e.g., "5/7/2024") on platforms where strptime is strict
-    m = re.match(r"^(\d{1,2})/(\d{1,2})/(\d{4})$", raw)
-    if m:
-        return date(int(m.group(3)), int(m.group(2)), int(m.group(1)))
+    match = re.match(r"^(\d{1,2})/(\d{1,2})/(\d{4})$", raw)
+    if match:
+        return date(int(match.group(3)), int(match.group(2)), int(match.group(1)))
     if len(raw) == 6 and raw.isdigit():
         try:
             return datetime.strptime(raw, "%m%Y").date().replace(day=1)
@@ -55,317 +81,440 @@ def _parse_date(raw: str) -> date:
             pass
     return date.today()
 
+
 def _parse_decimal(raw: str) -> float:
-    if not raw: return 0.0
-    cleaned = re.sub(r"[^\d.\-]", "", (raw or "").strip())
+    if not raw:
+        return 0.0
+    cleaned = re.sub(r"[^\d.\-]", "", raw.strip())
     try:
         return float(cleaned)
-    except:
+    except ValueError:
         return 0.0
 
-def _norm_clase_doc(raw: str) -> str:
-    m = re.match(r"^(\d+)", raw.strip())
-    return m.group(1) if m else "1"
 
 def _norm_tipo_doc(raw: str) -> str:
-    m = re.match(r"^0*(\d+)", raw.strip())
-    return m.group(0).zfill(2) if m else (raw[:2] if raw else "00")
+    match = re.match(r"^0*(\d+)", raw.strip())
+    return match.group(0).zfill(2) if match else (raw[:2] if raw else "00")
+
 
 def _safe_decode(content_bytes: bytes) -> str:
-    """Decodifica un archivo binario a string de forma segura probando UTF-8 (con BOM) y luego Latin-1."""
-    try:
-        return content_bytes.decode('utf-8-sig')
-    except UnicodeDecodeError:
+    for encoding in ("utf-8-sig", "utf-8", "latin-1"):
         try:
-            return content_bytes.decode('utf-8')
+            return content_bytes.decode(encoding)
         except UnicodeDecodeError:
-            return content_bytes.decode('latin-1')
+            continue
+    raise ValueError("No se pudo decodificar el archivo.")
 
-# --- Procesamiento de Filas Específicas ---
-
-# Mapeo de document_type al nombre que aparece en el trigger de filename
-_DOC_TYPE_TO_HANDLER = {
-    "VentasContribuyente": "CONTRIBUYENTES",
-    "VentasConsumidor": "CONSUMIDOR_FINAL",
-    "Compras": "COMPRAS",
-}
-
-def _process_hacienda_row(row: dict, filename: str, tenant_id: str, company_id: str, document_type: str = None, upload_id: str = None) -> dict:
-    """Mapea una fila de CSV de Hacienda al esquema de financial_records."""
-    try:
-        record = None
-        handler_key = (document_type or filename).upper()
-        # Normalizar: singular/plural, espacios y guiones
-        handler_key = handler_key.replace(" ", "").replace("-", "")
-        if "CONTRIBUYENTE" in handler_key:
-            grav_key = next((k for k in row if "GRAVADA" in k.upper()), "")
-            amount = _parse_decimal(row.get(grav_key, "0"))
-            iva_key = next((k for k in row if "DEBITO" in k.upper() or "DITO" in k.upper()), "")
-            iva = _parse_decimal(row.get(iva_key, "0"))
-            exento_key = next((k for k in row if "EXENTA" in k.upper() or "EXENTO" in k.upper()), "")
-            exento = _parse_decimal(row.get(exento_key, "0")) if exento_key else 0.0
-            # Búsqueda robusta de NIT Cliente
-            nit_keys = ["NIT CLIENTE", "NIT", "NIT CLIENTE:", "CLIENTE NIT", "ID CLIENTE"]
-            nit_key = next((k for k in row if any(key.upper() in k.upper() for key in nit_keys)), "")
-            nit = row.get(nit_key, "").strip()
-            
-            # Si no se encontró por NIT, intentar buscar por otro identificador o marca
-            if not nit or nit == "DESCONOCIDO":
-                # Fallback: buscar cualquier columna que tenga "NIT"
-                nit_key = next((k for k in row if "NIT" in k.upper()), "")
-                nit = row.get(nit_key, "").strip()
-            
-            # Si sigue sin encontrarse, dejarlo como 'DESCONOCIDO' pero con log
-            if not nit:
-                nit = "DESCONOCIDO"
-                logger.warning(f"NIT no encontrado en fila para {filename}")
-            
-            name_keys = ["NOMBRE CLIENTE", "NOMBRE", "CLIENTE"]
-            name_key = next((k for k in row if any(key.upper() in k.upper() for key in name_keys)), "")
-            name = row.get(name_key, "DESCONOCIDO")
-            
-            fecha_raw = next((v for k, v in row.items() if "FECHA" in k.upper()), "")
-            tipo_doc_key = next((k for k in row if "TIPO" in k.upper() and "DOC" in k.upper()), "")
-            record = {
-                "tenant_id": tenant_id, "company_id": company_id, "client_id": nit, "customer_name": name,
-                "amount": amount, "iva_amount": iva, "exento_amount": exento, "transaction_date": _parse_date(fecha_raw).isoformat(),
-                "transaction_type": "Ventas Contribuyente", "nit_dui": nit,
-                "document_type": _norm_tipo_doc(row.get(tipo_doc_key, "03")),
-                "upload_id": upload_id  # Inyección de Trazabilidad
-            }
-        
-        elif "CONSUMIDOR" in handler_key:
-            grav_key = next((k for k in row if "GRAVADA" in k.upper()), "")
-            amount = _parse_decimal(row.get(grav_key, "0"))
-            exento_key = next((k for k in row if "EXENTA" in k.upper() or "EXENTO" in k.upper()), "")
-            exento = _parse_decimal(row.get(exento_key, "0")) if exento_key else 0.0
-            fecha_raw = next((v for k, v in row.items() if "FECHA" in k.upper()), "")
-            
-            # Búsqueda inteligente de datos del cliente (DTE)
-            name_key = next((k for k in row if "NOMBRE" in k.upper() or "RECEPTOR" in k.upper()), "")
-            name = row.get(name_key, "").strip() or "CONSUMIDOR FINAL"
-            
-            nit_key = next((k for k in row if "NIT" in k.upper() or "DUI" in k.upper()), "")
-            nit = row.get(nit_key, "").strip() or "CONSUMIDOR_FINAL"
-            
-            tipo_doc_key = next((k for k in row if "TIPO" in k.upper() and "DOC" in k.upper()), "")
-            
-            record = {
-                "tenant_id": tenant_id, "company_id": company_id, "client_id": "CONSUMIDOR_FINAL", "customer_name": "CONSUMIDOR FINAL",
-                "amount": amount, "iva_amount": round(amount * IVA_RATE, 2), "exento_amount": exento, "transaction_date": _parse_date(fecha_raw).isoformat(),
-                "transaction_type": "Ventas Consumidor", "nit_dui": nit,
-                "document_type": _norm_tipo_doc(row.get(tipo_doc_key, "01")),
-                "upload_id": upload_id
-            }
-
-        elif "COMPRAS" in handler_key:
-            compras_key = next((k for k in row if "COMPRA" in k.upper() and "GRAVADA" in k.upper()), "")
-            amount = _parse_decimal(row.get(compras_key, "0"))
-            exento_key = next((k for k in row if "EXENTA" in k.upper() or "EXENTO" in k.upper()), "")
-            exento = _parse_decimal(row.get(exento_key, "0")) if exento_key else 0.0
-            iva_key = next((k for k in row if "CREDITO" in k.upper() or "DITO" in k.upper() and "FISC" in k.upper()), "")
-            iva = _parse_decimal(row.get(iva_key, "0"))
-            nit_key = next((k for k in row if "NIT" in k.upper() and "PROVEEDOR" in k.upper()), "")
-            nit = row.get(nit_key, "").strip() or "DESCONOCIDO"
-            name = next((v for k, v in row.items() if "NOMBRE" in k.upper()), "DESCONOCIDO")
-            fecha_raw = next((v for k, v in row.items() if "FECHA" in k.upper()), "")
-            tipo_doc_key = next((k for k in row if "TIPO" in k.upper() and "DOC" in k.upper()), "")
-            record = {
-                "tenant_id": tenant_id, "company_id": company_id, "client_id": nit, "customer_name": name,
-                "amount": amount, "iva_amount": iva, "exento_amount": exento, "transaction_date": _parse_date(fecha_raw).isoformat(),
-                "transaction_type": "Compras", "nit_dui": nit,
-                "document_type": _norm_tipo_doc(row.get(tipo_doc_key, "03")),
-                "upload_id": upload_id
-            }
-
-        # Fallback para CSV genérico (3 columnas: client_id, amount, date)
-        else:
-            vals = list(row.values())
-            if len(vals) >= 3:
-                record = {
-                    "tenant_id": tenant_id,
-                    "company_id": company_id,
-                    "client_id": str(vals[0]),
-                    "amount": _parse_decimal(str(vals[1])),
-                    "exento_amount": 0.0,
-                    "transaction_date": _parse_date(str(vals[2])).isoformat(),
-                    "transaction_type": "Otros"
-                }
-        
-        if record:
-            record["status"] = "Valido"
-            # Sanitización de seguridad: truncar campos que exceden límites de BD
-            if "nit_dui" in record:
-                record["nit_dui"] = str(record["nit_dui"])[:20]
-            if "document_type" in record:
-                record["document_type"] = str(record["document_type"])[:50]
-            if "client_id" in record:
-                record["client_id"] = str(record["client_id"])[:255]
-            
-            logger.debug(f"Record sanitizado y listo para inserción: {record}")
-            return record
-        else:
-            raise ValueError(f"Formato no reconocido en el archivo {filename}")
-
-    except Exception as e:
-        logger.error(f"Error procesando fila en {filename}: {e}")
-        raise ValueError(f"Fallo en validaciones fiscales o formato: {str(e)}")
-
-# --- Inyección de Encabezados para CSVs sin Headers (Formato LIBRO Hacienda) ---
-
-_LIBRO_HEADERS = {
-    "CONTRIBUYENTE": "FECHA_EMISION,CLASE_DOC,TIPO_DOC,NUM_RESOLUCION,SERIE,NUM_DOC,NUM_CONTROL,NIT_CLIENTE,NOMBRE_CLIENTE,VENTAS_EXENTAS,VENTAS_NO_SUJETAS,VENTAS_GRAVADAS,DEBITO_FISCAL,VENTAS_TERCEROS,DEBITO_TERCEROS,TOTAL_VENTA,DUI_CLIENTE,TIPO_OPERACION,TIPO_INGRESO,NUM_ANEXO",
-    "CONSUMIDOR": "FECHA_EMISION,CLASE_DOC,TIPO_DOC,NUM_RESOLUCION,SERIE,NUM_CONTROL_DESDE,NUM_CONTROL_HASTA,NUM_DOC_DESDE,NUM_DOC_HASTA,NUM_MAQUINA,VENTAS_EXENTAS,VENTAS_INTERNAS_EXENTAS,VENTAS_NO_SUJETAS,VENTAS_GRAVADAS,EXPORTACIONES_CENTROAMERICA,EXPORTACIONES_FUERA_CENTROAMERICA,EXPORTACIONES_SERVICIO,VENTAS_ZONAS_FRANCAS,VENTAS_TERCEROS,TOTAL_VENTAS,TIPO_OPERACION,TIPO_INGRESO,NUM_ANEXO",
-    "COMPRAS": "FECHA_EMISION,CLASE_DOC,TIPO_DOC,NUM_DOC,NIT_PROVEEDOR,NOMBRE_PROVEEDOR,COMPRAS_INTERNAS_EXENTAS,INTERNACIONES_EXENTAS,IMPORTACIONES_EXENTAS,COMPRAS_INTERNAS_GRAVADAS,INTERNACIONES_GRAVADAS,IMPORTACIONES_GRAVADAS_BIENES,IMPORTACIONES_GRAVADAS_SERVICIOS,CREDITO_FISCAL,TOTAL_COMPRAS,DUI_PROVEEDOR,TIPO_OPERACION,CLASIFICACION,SECTOR,TIPO_COSTO_GASTO,NUM_ANEXO",
-}
 
 def _detect_separator(content: str) -> str:
-    """Detecta el separador de un CSV probando coma, punto y coma, tabulador y pipe."""
-    lines = content.strip().split("\n")
-    if not lines:
-        return ","
-    line = lines[0]
-    counts = {s: line.count(s) for s in (",", ";", "\t", "|")}
+    first_line = content.strip().split("\n", maxsplit=1)[0]
+    counts = {separator: first_line.count(separator) for separator in (",", ";", "\t", "|")}
     best = max(counts, key=counts.get)
     return best if counts[best] > 0 else ","
 
-def _ensure_headers(content: str, filename: str = "", document_type: str = None) -> tuple:
-    """Pre-ppone encabezados Hacienda si el CSV no tiene fila de encabezados.
-    Retorna (contenido, separador_detectado)."""
+
+def _ensure_headers(
+    content: str,
+    filename: str = "",
+    document_type: str | None = None,
+) -> tuple[str, str]:
     lines = content.strip().split("\n")
     if not lines:
         return content, ","
 
-    sep = _detect_separator(content)
-    first_row = lines[0].split(sep)
+    separator = _detect_separator(content)
+    first_row = lines[0].split(separator)
+    keywords = (
+        "FECHA",
+        "TIPO",
+        "DOC",
+        "NIT",
+        "NOMBRE",
+        "CLIENTE",
+        "PROVEEDOR",
+        "GRAVADA",
+        "EXENTA",
+        "DEBITO",
+    )
+    if any(any(keyword in cell.upper() for keyword in keywords) for cell in first_row):
+        return content, separator
 
-    header_keywords = ["FECHA", "TIPO", "DOC", "NIT", "NOMBRE", "CLIENTE", "PROVEEDOR", "GRAVADA", "EXENTA", "DEBITO"]
-    has_headers = any(any(k in cell.upper() for k in header_keywords) for cell in first_row)
-    if has_headers:
-        return content, sep
-
-    # Determinar tipo de documento
-    key = (document_type or filename or "").upper().replace(" ", "").replace("-", "")
-    template = None
-    if "CONTRIBUYENTE" in key:
-        template = _LIBRO_HEADERS["CONTRIBUYENTE"]
-    elif "CONSUMIDOR" in key:
-        template = _LIBRO_HEADERS["CONSUMIDOR"]
-    elif "COMPRAS" in key:
-        template = _LIBRO_HEADERS["COMPRAS"]
-
+    key = (document_type or filename).upper().replace(" ", "").replace("-", "")
+    template = next(
+        (header for name, header in _LIBRO_HEADERS.items() if name in key),
+        None,
+    )
     if template:
-        template_line = template.replace(",", sep)
-        content = template_line + "\n" + content
-        logger.info("Encabezados Hacienda inyectados para CSV sin headers (%s) con separador '%s'", key, sep)
+        content = template.replace(",", separator) + "\n" + content
+    return content, separator
 
-    return content, sep
 
-# --- Tarea Principal ---
+def _first_key(row: dict[str, str], *needles: str) -> str:
+    return next(
+        (
+            key
+            for key in row
+            if all(needle in key.upper() for needle in needles)
+        ),
+        "",
+    )
 
-def process_financial_csv(bucket_name: str, file_path: str, tenant_id: str, company_id: str, upload_id: str = None, tax_doc_id: str = None, document_type: str = None):
-    supabase = get_supabase_admin_client()
-    
-    def update_status(status: str, rows: int = 0, error: str = None):
-        if upload_id:
-            data = {"status": status, "records_processed": rows}
-            if error: data["error_message"] = error[:250]
-            supabase.table("csv_upload_history").update(data).eq("id", upload_id).execute()
-        if tax_doc_id:
-            tax_status = "success" if status == "success" else ("error" if status == "error" else "pending")
-            supabase.table("tax_documents").update({"status": tax_status, "records_processed": rows}).eq("id", tax_doc_id).execute()
+
+def _first_value(row: dict[str, str], needle: str, default: str = "") -> str:
+    return next((value for key, value in row.items() if needle in key.upper()), default)
+
+
+def _process_hacienda_row(
+    row: dict[str, str],
+    filename: str,
+    tenant_id: str,
+    company_id: str,
+    document_type: str | None = None,
+    upload_id: str | None = None,
+) -> dict[str, Any]:
+    handler = (document_type or filename).upper().replace(" ", "").replace("-", "")
+    transaction_date = _parse_date(_first_value(row, "FECHA")).isoformat()
+
+    if "CONTRIBUYENTE" in handler:
+        gravada = _first_key(row, "GRAVADA")
+        debito = next(
+            (key for key in row if "DEBITO" in key.upper() or "DITO" in key.upper()),
+            "",
+        )
+        exenta = next(
+            (key for key in row if "EXENTA" in key.upper() or "EXENTO" in key.upper()),
+            "",
+        )
+        nit = next(
+            (
+                value.strip()
+                for key, value in row.items()
+                if "NIT" in key.upper() and value.strip()
+            ),
+            "DESCONOCIDO",
+        )
+        name = next(
+            (
+                value
+                for key, value in row.items()
+                if ("NOMBRE" in key.upper() or "CLIENTE" in key.upper()) and value
+            ),
+            "DESCONOCIDO",
+        )
+        tipo_doc = _first_key(row, "TIPO", "DOC")
+        record = {
+            "client_id": nit,
+            "customer_name": name,
+            "amount": _parse_decimal(row.get(gravada, "0")),
+            "iva_amount": _parse_decimal(row.get(debito, "0")),
+            "exento_amount": _parse_decimal(row.get(exenta, "0")) if exenta else 0.0,
+            "transaction_date": transaction_date,
+            "transaction_type": "Ventas Contribuyente",
+            "nit_dui": nit,
+            "document_type": _norm_tipo_doc(row.get(tipo_doc, "03")),
+        }
+    elif "CONSUMIDOR" in handler:
+        gravada = _first_key(row, "GRAVADA")
+        exenta = next(
+            (key for key in row if "EXENTA" in key.upper() or "EXENTO" in key.upper()),
+            "",
+        )
+        amount = _parse_decimal(row.get(gravada, "0"))
+        nit = next(
+            (
+                value.strip()
+                for key, value in row.items()
+                if ("NIT" in key.upper() or "DUI" in key.upper()) and value.strip()
+            ),
+            "CONSUMIDOR_FINAL",
+        )
+        tipo_doc = _first_key(row, "TIPO", "DOC")
+        record = {
+            "client_id": "CONSUMIDOR_FINAL",
+            "customer_name": "CONSUMIDOR FINAL",
+            "amount": amount,
+            "iva_amount": round(amount * IVA_RATE, 2),
+            "exento_amount": _parse_decimal(row.get(exenta, "0")) if exenta else 0.0,
+            "transaction_date": transaction_date,
+            "transaction_type": "Ventas Consumidor",
+            "nit_dui": nit,
+            "document_type": _norm_tipo_doc(row.get(tipo_doc, "01")),
+        }
+    elif "COMPRAS" in handler:
+        gravada = _first_key(row, "COMPRA", "GRAVADA")
+        exenta = next(
+            (key for key in row if "EXENTA" in key.upper() or "EXENTO" in key.upper()),
+            "",
+        )
+        credito = next(
+            (
+                key
+                for key in row
+                if "CREDITO" in key.upper()
+                or ("DITO" in key.upper() and "FISC" in key.upper())
+            ),
+            "",
+        )
+        nit_key = _first_key(row, "NIT", "PROVEEDOR")
+        nit = row.get(nit_key, "").strip() or "DESCONOCIDO"
+        tipo_doc = _first_key(row, "TIPO", "DOC")
+        record = {
+            "client_id": nit,
+            "customer_name": _first_value(row, "NOMBRE", "DESCONOCIDO"),
+            "amount": _parse_decimal(row.get(gravada, "0")),
+            "iva_amount": _parse_decimal(row.get(credito, "0")),
+            "exento_amount": _parse_decimal(row.get(exenta, "0")) if exenta else 0.0,
+            "transaction_date": transaction_date,
+            "transaction_type": "Compras",
+            "nit_dui": nit,
+            "document_type": _norm_tipo_doc(row.get(tipo_doc, "03")),
+        }
+    else:
+        values = list(row.values())
+        if len(values) < 3:
+            raise ValueError(f"Formato no reconocido en el archivo {filename}")
+        record = {
+            "client_id": str(values[0]),
+            "amount": _parse_decimal(str(values[1])),
+            "exento_amount": 0.0,
+            "transaction_date": _parse_date(str(values[2])).isoformat(),
+            "transaction_type": "Otros",
+        }
+
+    record.update(
+        {
+            "tenant_id": tenant_id,
+            "company_id": company_id,
+            "upload_id": upload_id,
+            "status": "Valido",
+        }
+    )
+    for field, limit in (("nit_dui", 20), ("document_type", 50), ("client_id", 255)):
+        if field in record:
+            record[field] = str(record[field])[:limit]
+    return record
+
+
+def _iter_records(
+    content: str,
+    filename: str,
+    tenant_id: str,
+    company_id: str,
+    upload_id: str,
+    document_type: str | None,
+) -> Iterator[dict[str, Any]]:
+    prepared, separator = _ensure_headers(content, filename, document_type)
+    reader = csv.DictReader(io.StringIO(prepared), delimiter=separator)
+    for row in reader:
+        sanitized = {
+            key.strip(): _sanitize_cell(value)
+            for key, value in row.items()
+            if key
+        }
+        yield _process_hacienda_row(
+            sanitized,
+            filename,
+            tenant_id,
+            company_id,
+            document_type=document_type,
+            upload_id=upload_id,
+        )
+
+
+def _update_status(
+    client,
+    *,
+    upload_id: str,
+    tax_doc_id: str | None,
+    tenant_id: str,
+    state: str,
+    rows: int = 0,
+    error_message: str | None = None,
+) -> None:
+    history_data: dict[str, Any] = {
+        "status": state,
+        "records_processed": rows,
+        "error_message": error_message,
+    }
+    (
+        client.table("csv_upload_history")
+        .update(history_data)
+        .eq("id", upload_id)
+        .eq("tenant_id", tenant_id)
+        .execute()
+    )
+    if tax_doc_id:
+        tax_state = "success" if state == "success" else (
+            "error" if state == "error" else "pending"
+        )
+        (
+            client.table("tax_documents")
+            .update(
+                {
+                    "status": tax_state,
+                    "records_processed": rows,
+                    "error_message": error_message,
+                }
+            )
+            .eq("id", tax_doc_id)
+            .eq("tenant_id", tenant_id)
+            .execute()
+        )
+
+
+@celery_app.task(
+    bind=True,
+    name="app.worker.tasks.process_financial_csv",
+    acks_late=True,
+    reject_on_worker_lost=True,
+)
+def process_financial_csv(
+    self,
+    bucket_name: str,
+    file_path: str,
+    tenant_id: str,
+    company_id: str,
+    upload_id: str,
+    tax_doc_id: str | None = None,
+    document_type: str | None = None,
+):
+    """Process an upload exactly once and insert records in bounded batches."""
+    client = get_supabase_admin_client()
+    if client is None:
+        raise RuntimeError("Supabase service role is not configured.")
+
+    history = (
+        client.table("csv_upload_history")
+        .select("status,tenant_id,company_id")
+        .eq("id", upload_id)
+        .eq("tenant_id", tenant_id)
+        .eq("company_id", company_id)
+        .limit(1)
+        .execute()
+    )
+    if not history.data:
+        logger.error("Upload %s does not belong to the supplied tenant/company", upload_id)
+        return {"status": "error", "code": "UPLOAD_NOT_FOUND"}
+
+    current_status = history.data[0].get("status")
+    if current_status == "success":
+        return {"status": "success", "idempotent": True}
+    if current_status == "processing" and not self.request.delivery_info.get("redelivered"):
+        return {"status": "processing", "idempotent": True}
+
+    total_processed = 0
+    latest_date: str | None = None
+    batch: list[dict[str, Any]] = []
+
+    def flush_batch() -> None:
+        nonlocal total_processed, batch
+        if not batch:
+            return
+        client.table("financial_records").insert(batch).execute()
+        total_processed += len(batch)
+        batch = []
 
     try:
-        update_status("processing")
-        
-        # 1. Descargar archivo
-        res = supabase.storage.from_(bucket_name).download(file_path)
-        
-        # 2. Análisis Analítico Vectorial (DuckDB — siempre conexión directa para CSV)
-        try:
-            if not file_path.endswith('.zip'):
-                temp_file = f"temp_{upload_id}.csv"
-                with open(temp_file, "wb") as f:
-                    f.write(res)
+        (
+            client.table("financial_records")
+            .delete()
+            .eq("upload_id", upload_id)
+            .eq("tenant_id", tenant_id)
+            .execute()
+        )
+        _update_status(
+            client,
+            upload_id=upload_id,
+            tax_doc_id=tax_doc_id,
+            tenant_id=tenant_id,
+            state="processing",
+        )
+        payload = client.storage.from_(bucket_name).download(file_path)
 
-                duck_csv_con = duckdb.connect(':memory:')
-                duck_res = duck_csv_con.execute("SELECT count(*) FROM read_csv_auto(?)", [temp_file]).fetchone()
-                logger.info(f"DuckDB Análisis: {duck_res[0]} registros detectados en {file_path}")
-                import os
-                os.remove(temp_file)
-                duck_csv_con.close()
-        except Exception as e:
-            logger.warning(f"DuckDB Pre-analysis skipped: {e}")
-
-        files_to_process = {}
-        # 2. Detectar si es ZIP o CSV
-        if file_path.endswith('.zip'):
-            with zipfile.ZipFile(io.BytesIO(res), 'r') as zf:
-                for name in zf.namelist():
-                    basename = re.sub(r'^.*/', '', name)
-                    if basename in ALLOWED_FILES:
-                        files_to_process[basename] = _safe_decode(zf.read(name))
+        if file_path.lower().endswith(".zip"):
+            with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+                for member in validated_archive_members(archive, ALLOWED_FILES):
+                    filename = member.filename.replace("\\", "/").rsplit("/", 1)[-1]
+                    content = _safe_decode(archive.read(member))
+                    for record in _iter_records(
+                        content,
+                        filename,
+                        tenant_id,
+                        company_id,
+                        upload_id,
+                        None,
+                    ):
+                        batch.append(record)
+                        record_date = record.get("transaction_date")
+                        if record_date and (latest_date is None or record_date > latest_date):
+                            latest_date = record_date
+                        if len(batch) == INSERT_BATCH_SIZE:
+                            flush_batch()
         else:
-            files_to_process[re.sub(r'^.*/', '', file_path)] = _safe_decode(res)
+            content = _safe_decode(payload)
+            filename = file_path.rsplit("/", 1)[-1]
+            for record in _iter_records(
+                content,
+                filename,
+                tenant_id,
+                company_id,
+                upload_id,
+                document_type,
+            ):
+                batch.append(record)
+                record_date = record.get("transaction_date")
+                if record_date and (latest_date is None or record_date > latest_date):
+                    latest_date = record_date
+                if len(batch) == INSERT_BATCH_SIZE:
+                    flush_batch()
+        flush_batch()
 
-        total_processed = 0
-        all_records = []
-
-        # 3. Procesar cada archivo
-        handler_doc_type = document_type if not file_path.endswith('.zip') else None
-        for filename, content in files_to_process.items():
-            content, sep = _ensure_headers(content, filename=filename, document_type=handler_doc_type)
-            reader = csv.DictReader(io.StringIO(content), delimiter=sep)
-            for row in reader:
-                sanitized_row = {k.strip(): _sanitize_cell(v) for k, v in row.items() if k}
-                record = _process_hacienda_row(sanitized_row, filename, tenant_id, company_id, document_type=handler_doc_type, upload_id=upload_id)
-                if record:
-                    all_records.append(record)
-
-        # 4. Inserción en bloques
-        if all_records:
-            for i in range(0, len(all_records), 500):
-                chunk = all_records[i:i + 500]
-                supabase.table("financial_records").insert(chunk).execute()
-                total_processed += len(chunk)
-
-        # 5. Actualizar metadata de la compañía
-        if total_processed > 0 and company_id:
-            try:
-                # Obtener el total real acumulativo de registros en la base de datos
-                count_res = supabase.table("financial_records")\
-                    .select("id", count="exact")\
-                    .eq("company_id", company_id)\
-                    .execute()
-                total_records_db = count_res.count
-                
-                update_data = {
-                    "total_records": total_records_db,
-                    "status": "active"
-                }
-                
-                # Obtener la fecha más reciente de los registros procesados en esta carga
-                dates = [r.get("transaction_date") for r in all_records if r.get("transaction_date")]
-                if dates:
-                    latest_date = max(dates)
-                    update_data["last_processed_month"] = latest_date[:7]
-                
-                supabase.table("companies").update(update_data).eq("id", company_id).execute()
-            except Exception as e:
-                logger.warning(f"No se pudo actualizar metadata de compañía {company_id}: {e}")
-
-        # 6. Invalidar cache Redis para que los analytics reflejen los nuevos datos
+        count_response = (
+            client.table("financial_records")
+            .select("id", count="exact")
+            .eq("company_id", company_id)
+            .eq("tenant_id", tenant_id)
+            .execute()
+        )
+        company_data: dict[str, Any] = {
+            "total_records": count_response.count or 0,
+            "status": "active",
+        }
+        if latest_date:
+            company_data["last_processed_month"] = latest_date[:7]
+        (
+            client.table("companies")
+            .update(company_data)
+            .eq("id", company_id)
+            .eq("tenant_id", tenant_id)
+            .execute()
+        )
         invalidate_tenant_cache(tenant_id)
-
-        # 7. Limpieza y finalización
-        supabase.storage.from_(bucket_name).remove([file_path])
-        update_status("success", total_processed)
-        
+        _update_status(
+            client,
+            upload_id=upload_id,
+            tax_doc_id=tax_doc_id,
+            tenant_id=tenant_id,
+            state="success",
+            rows=total_processed,
+        )
+        try:
+            client.storage.from_(bucket_name).remove([file_path])
+        except Exception:
+            logger.exception("Could not remove processed upload %s", file_path)
         return {"status": "success", "processed_rows": total_processed}
-        
-    except Exception as e:
-        logger.error(f"Error crítico en process_financial_csv: {e}")
-        update_status("error", error=str(e))
-        return {"status": "error", "error_message": str(e)}
-
-
+    except Exception:
+        logger.exception("Financial upload processing failed for %s", upload_id)
+        try:
+            _update_status(
+                client,
+                upload_id=upload_id,
+                tax_doc_id=tax_doc_id,
+                tenant_id=tenant_id,
+                state="error",
+                rows=total_processed,
+                error_message="El procesamiento del archivo falló.",
+            )
+        except Exception:
+            logger.exception("Could not mark upload %s as failed", upload_id)
+        return {"status": "error", "code": "PROCESSING_FAILED"}

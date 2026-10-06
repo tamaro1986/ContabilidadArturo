@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { fetchWithAuth } from "@/lib/api";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -206,11 +206,7 @@ function DetailRow({ label, value, mono }: { label: string; value: string | numb
 
 // ── Main Component ─────────────────────────────────────────────────────────────
 
-interface AnomalyAlertPanelProps {
-  token: string;
-}
-
-export function AnomalyAlertPanel({ token }: AnomalyAlertPanelProps) {
+export function AnomalyAlertPanel() {
   const [records, setRecords] = useState<AnomalyRecord[]>([]);
   const [summary, setSummary] = useState<AnomalySummary | null>(null);
   const [loading, setLoading] = useState(true);

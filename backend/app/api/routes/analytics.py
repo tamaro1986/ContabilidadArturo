@@ -1,5 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, status
-from app.api.dependencies.roles import require_cliente, require_contador
+from fastapi import APIRouter, Depends, HTTPException
+from app.api.dependencies.roles import require_cliente
 from app.services.duckdb_client import get_duckdb_client
 from app.services.cache import cache_response
 

@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { supabase } from "@/lib/supabaseClient";
 import { fetchWithAuth } from "@/lib/api";
 
 interface Message {
@@ -10,10 +9,7 @@ interface Message {
   sql?: string;
 }
 
-interface AiChatWidgetProps {
-}
-
-export default function AiChatWidget({ }: AiChatWidgetProps) {
+export default function AiChatWidget() {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([
     {

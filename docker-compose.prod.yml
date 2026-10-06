@@ -1,0 +1,225 @@
+# ==============================================================================
+# CONTABILIDAD ARTURO - ORQUESTACIÓN DE PRODUCCIÓN EN VPS
+# ==============================================================================
+# Servicios:
+# 1. caddy: Proxy inverso con SSL/HTTPS automático (Let's Encrypt)
+# 2. frontend: Aplicación web Next.js Standalone
+# 3. backend: API FastAPI (Gunicorn/Uvicorn) + DuckDB analítico
+# 4. worker: Worker asíncrono Celery (procesamiento de CSV/ZIP)
+# 5. redis: Caché y broker de colas con persistencia
+# 6. db: PostgreSQL 15 con extensiones y esquema completo
+# ==============================================================================
+
+services:
+  # ----------------------------------------------------------------------------
+  # REVERSE PROXY & AUTOMATED SSL
+  # ----------------------------------------------------------------------------
+  caddy:
+    image: caddy:2-alpine
+    container_name: contabilidad_caddy
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      - DOMAIN_NAME=${DOMAIN_NAME}
+      - APP_DOMAIN=${APP_DOMAIN}
+      - API_DOMAIN=${API_DOMAIN}
+      - DB_DOMAIN=${DB_DOMAIN}
+      - EMAIL_ACME=${EMAIL_ACME}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - frontend
+      - backend
+    networks:
+      - app-network
+
+  # ----------------------------------------------------------------------------
+  # FRONTEND (Next.js 16 Standalone)
+  # ----------------------------------------------------------------------------
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+    container_name: contabilidad_frontend
+    restart: always
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - HOSTNAME=0.0.0.0
+      - NEXT_TELEMETRY_DISABLED=1
+    expose:
+      - "3000"
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - >-
+          fetch('http://127.0.0.1:3000').then(r => {
+            if (!r.ok) process.exit(1)
+          }).catch(() => process.exit(1))
+      interval: 20s
+      timeout: 8s
+      retries: 5
+      start_period: 30s
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - app-network
+
+  # ----------------------------------------------------------------------------
+  # BACKEND API (FastAPI + Gunicorn)
+  # ----------------------------------------------------------------------------
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: contabilidad_backend
+    restart: always
+    expose:
+      - "10000"
+    environment:
+      - MOCK_MODE=False
+      - PROJECT_NAME=${PROJECT_NAME:-Contabilidad Arturo}
+      - DATABASE_URL=${DATABASE_URL}
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_KEY=${SUPABASE_KEY}
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://redis:6379/0}
+      - CORS_ORIGINS=${CORS_ORIGINS}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+    depends_on:
+      redis:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          urllib.request.urlopen('http://127.0.0.1:10000/health/ready', timeout=5)
+      interval: 15s
+      timeout: 6s
+      retries: 5
+      start_period: 25s
+    volumes:
+      - uploads_data:/app/secure_uploads
+    networks:
+      - app-network
+
+  # ----------------------------------------------------------------------------
+  # ASYNC WORKER (Celery)
+  # ----------------------------------------------------------------------------
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: contabilidad_worker
+    restart: always
+    command:
+      - celery
+      - -A
+      - app.core.celery_app:celery_app
+      - worker
+      - --loglevel=info
+      - --queues=main-queue
+      - --concurrency=2
+    environment:
+      - MOCK_MODE=False
+      - DATABASE_URL=${DATABASE_URL}
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_KEY=${SUPABASE_KEY}
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://redis:6379/0}
+    depends_on:
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - celery -A app.core.celery_app:celery_app inspect ping --timeout=5
+      interval: 25s
+      timeout: 10s
+      retries: 5
+      start_period: 25s
+    volumes:
+      - uploads_data:/app/secure_uploads
+    networks:
+      - app-network
+
+  # ----------------------------------------------------------------------------
+  # CACHE & MESSAGE BROKER (Redis 7)
+  # ----------------------------------------------------------------------------
+  redis:
+    image: redis:7.4-alpine
+    container_name: contabilidad_redis
+    restart: always
+    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1"]
+    expose:
+      - "6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 4s
+      retries: 5
+    networks:
+      - app-network
+
+  # ----------------------------------------------------------------------------
+  # BASE DE DATOS (PostgreSQL 15)
+  # ----------------------------------------------------------------------------
+  db:
+    image: postgres:15-alpine
+    container_name: contabilidad_db
+    restart: always
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB:-postgres}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./supabase/migrations:/docker-entrypoint-initdb.d:ro
+    expose:
+      - "5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - app-network
+
+volumes:
+  caddy_data:
+  caddy_config:
+  postgres_data:
+  redis_data:
+  uploads_data:
+
+networks:
+  app-network:
+    driver: bridge

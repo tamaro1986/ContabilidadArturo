@@ -1,6 +1,30 @@
 // frontend/src/components/analytics/SmartCsvUploader.tsx
 import React, { useState, useRef } from 'react';
 import { Company, AnnexUploadType, CsvValidationResult, ValidationError, ValidationWarning } from '@/types/companyTypes';
+import { getErrorMessage } from '@/lib/errors';
+
+export const MAX_UPLOAD_SIZE_BYTES = 25 * 1024 * 1024;
+
+export function validateUploadMetadata(
+  file: Pick<File, "name" | "size">,
+): ValidationError | null {
+  if (file.size > MAX_UPLOAD_SIZE_BYTES) {
+    return {
+      code: "FILE_TOO_LARGE",
+      severity: "critical",
+      message: "El archivo supera el límite permitido de 25 MB.",
+    };
+  }
+  const filename = file.name.toLowerCase();
+  if (!filename.endsWith(".csv") && !filename.endsWith(".zip")) {
+    return {
+      code: "INVALID_FILE_TYPE",
+      severity: "critical",
+      message: "Solo se admiten archivos CSV o ZIP.",
+    };
+  }
+  return null;
+}
 
 interface SmartCsvUploaderProps {
   company: Company;
@@ -94,6 +118,23 @@ export default function SmartCsvUploader({ company, onValidationComplete, onBack
           warnings: []
         });
       }, 1000);
+      return;
+    }
+
+    if (file.name.toLowerCase().endsWith(".zip")) {
+      setIsProcessing(false);
+      onValidationComplete({
+        isValid: true,
+        fileName: file.name,
+        fileSize: file.size,
+        errors: [],
+        warnings: [{
+          code: "ZIP_SERVER_VALIDATION",
+          message: "El contenido del ZIP será validado de forma segura por el servidor.",
+        }],
+        detectedType: selectedType,
+        file,
+      });
       return;
     }
 
@@ -268,14 +309,14 @@ export default function SmartCsvUploader({ company, onValidationComplete, onBack
           });
         }, 1200); 
         
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error("Error validando el CSV:", err);
         setIsProcessing(false);
         onValidationComplete({
           isValid: false,
           fileName: file.name,
           fileSize: file.size,
-          errors: [{ code: 'PARSE_ERROR', severity: 'critical', message: `Error al procesar el archivo: ${err.message}` }],
+          errors: [{ code: 'PARSE_ERROR', severity: 'critical', message: `Error al procesar el archivo: ${getErrorMessage(err, 'Error desconocido')}` }],
           warnings: []
         });
       }
@@ -378,7 +419,7 @@ export default function SmartCsvUploader({ company, onValidationComplete, onBack
               type="file" 
               ref={fileInputRef} 
               className="hidden" 
-              accept=".csv"
+              accept=".csv,.zip"
               onChange={handleFileChange}
             />
             <div className={`w-20 h-20 rounded-2xl flex items-center justify-center mb-6 transition-all duration-300 ${isDragging ? 'bg-emerald-500 text-white scale-110 shadow-xl shadow-emerald-500/30' : 'bg-zinc-100 text-zinc-400 group-hover:bg-emerald-500 group-hover:text-white group-hover:scale-110 group-hover:shadow-xl group-hover:shadow-emerald-500/30'}`}>

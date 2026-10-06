@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from supabase import Client
-from typing import Optional, List
+from typing import Optional
 from app.services.supabase_client import get_supabase_client, get_supabase_admin_client
 from app.api.dependencies.roles import require_contador
 
