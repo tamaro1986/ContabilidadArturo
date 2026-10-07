@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 class UserRole(str, Enum):
     ADMIN = "administrador"
     CONTADOR = "contador"
+    CLIENTE = "cliente"
     VIEWER = "viewer"
     OWNER = "owner"
 
@@ -59,7 +60,7 @@ class RoleChecker:
         try:
             profile_response = (
                 supabase.table("user_profiles")
-                .select("role, tenant_id")
+                .select("role, tenant_id, is_active")
                 .eq("id", current_user.id)
                 .single()
                 .execute()
@@ -77,6 +78,14 @@ class RoleChecker:
                 status_code=status.HTTP_404_NOT_FOUND,
                 code="PROFILE_NOT_FOUND",
                 detail="Perfil de usuario no encontrado.",
+            )
+
+        is_active = profile_response.data.get("is_active", True)
+        if is_active is False:
+            raise ApiException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                code="USER_INACTIVE",
+                detail="Tu cuenta de usuario se encuentra inactiva. Contacta al administrador.",
             )
 
         user_role = profile_response.data.get("role")
@@ -109,6 +118,6 @@ require_contador = RoleChecker(
 )
 require_owner = RoleChecker([UserRole.OWNER, UserRole.ADMIN])
 require_viewer = RoleChecker(
-    [UserRole.VIEWER, UserRole.CONTADOR, UserRole.OWNER, UserRole.ADMIN]
+    [UserRole.VIEWER, UserRole.CLIENTE, UserRole.CONTADOR, UserRole.OWNER, UserRole.ADMIN]
 )
 require_cliente = require_viewer

@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { getErrorMessage } from '@/lib/errors';
+import UserManagementPanel from './UserManagementPanel';
 
 interface PromoCode {
   id: string;
@@ -28,6 +29,7 @@ interface AdminUser {
 }
 
 export default function AdminPanel() {
+  const [activeSection, setActiveSection] = useState<'users' | 'membership'>('users');
   const [promoCodes, setPromoCodes] = useState<PromoCode[]>([]);
   const [tenants, setTenants] = useState<AdminTenant[]>([]);
   const [users, setUsers] = useState<AdminUser[]>([]);
@@ -116,8 +118,35 @@ export default function AdminPanel() {
   if (isLoading) return <div className="p-10 animate-pulse text-zinc-500 font-black uppercase tracking-widest text-xs">Cargando Bóveda Administrativa...</div>;
 
   return (
-    <div className="space-y-12 pb-20">
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-10">
+    <div className="space-y-8 pb-20">
+      {/* Subsecciones administrativas */}
+      <div className="flex flex-wrap gap-2 bg-zinc-100 p-1.5 rounded-2xl w-fit">
+        <button
+          onClick={() => setActiveSection('users')}
+          className={`px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
+            activeSection === 'users'
+              ? 'bg-white text-zinc-900 shadow-sm'
+              : 'text-zinc-500 hover:text-zinc-900'
+          }`}
+        >
+          👥 Gestión de Usuarios & Roles
+        </button>
+        <button
+          onClick={() => setActiveSection('membership')}
+          className={`px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
+            activeSection === 'membership'
+              ? 'bg-white text-zinc-900 shadow-sm'
+              : 'text-zinc-500 hover:text-zinc-900'
+          }`}
+        >
+          🎟️ Cupones y Membresías
+        </button>
+      </div>
+
+      {activeSection === 'users' && <UserManagementPanel />}
+
+      {activeSection === 'membership' && (
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-10">
         
         {/* Promo Codes Management */}
         <div className="bg-white border border-zinc-200 rounded-[2.5rem] p-10 shadow-xl">
@@ -276,7 +305,8 @@ export default function AdminPanel() {
           </div>
         </div>
 
-      </div>
+        </div>
+      )}
     </div>
   );
 }

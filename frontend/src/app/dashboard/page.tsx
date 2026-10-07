@@ -946,8 +946,8 @@ export default function DashboardPage() {
                                             </button>
                                         )}
 
-                                        {/* Bóveda Administrativa: Solo para el Administrador Global */}
-                                        {(isAdmin && session?.user?.email === 'garcia.integrum1@gmail.com') && (
+                                        {/* Bóveda Administrativa: Administración de Usuarios y Membresías */}
+                                        {isAdmin && (
                                             <button 
                                                 onClick={() => setActiveTab('admin')}
                                                 className="p-8 bg-zinc-50 border border-zinc-200 rounded-3xl group hover:border-blue-500/50 transition-colors text-left"
@@ -956,7 +956,7 @@ export default function DashboardPage() {
                                                     <Icons.Settings />
                                                 </div>
                                                 <p className="text-[11px] font-black text-zinc-900 uppercase tracking-widest mb-3">Bóveda Administrativa</p>
-                                                <p className="text-sm text-zinc-500 font-medium">Gestión de membresías, cupones y auditoría global de la plataforma.</p>
+                                                <p className="text-sm text-zinc-500 font-medium">Gestión integral de usuarios, asignación de roles, altas, bajas, cupones y membresías.</p>
                                             </button>
                                         )}
 

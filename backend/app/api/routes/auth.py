@@ -130,17 +130,34 @@ def register(
 @router.post("/login", response_model=Token)
 def login(
     user_in: UserLogin,
-    supabase: Client = Depends(get_supabase_client)
+    supabase: Client = Depends(get_supabase_client),
+    admin_supabase: Client = Depends(get_supabase_admin_client)
 ):
     try:
         auth_response = supabase.auth.sign_in_with_password({
             "email": user_in.email,
             "password": user_in.password,
         })
+        if not auth_response.session or not auth_response.user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Credenciales incorrectas."
+            )
+
+        client = admin_supabase or supabase
+        profile_res = client.table("user_profiles").select("is_active").eq("id", auth_response.user.id).single().execute()
+        if profile_res.data and profile_res.data.get("is_active") is False:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Tu cuenta de usuario ha sido desactivada. Contacta al administrador."
+            )
+
         return {
             "access_token": auth_response.session.access_token,
             "token_type": "bearer"
         }
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
