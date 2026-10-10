@@ -51,9 +51,9 @@ export default function UserManagementPanel() {
     setLoading(true);
     setError(null);
     try {
-      const [usersRes, { data: tenantList }] = await Promise.all([
+      const [usersRes, tenantsRes] = await Promise.all([
         fetchWithAuth('/admin/users'),
-        supabase.from('tenants').select('id, name').order('name', { ascending: true })
+        fetchWithAuth('/admin/tenants'),
       ]);
 
       if (!usersRes.ok) {
@@ -61,6 +61,10 @@ export default function UserManagementPanel() {
       }
 
       const usersData: AdminUser[] = await usersRes.json();
+      let tenantList: Array<{ id: string; name: string }> = [];
+      if (tenantsRes.ok) {
+        tenantList = await tenantsRes.json();
+      }
       setUsers(usersData);
       setTenants(tenantList || []);
       if (tenantList && tenantList.length > 0 && !newTenantId) {

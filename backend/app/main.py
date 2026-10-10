@@ -12,6 +12,7 @@ from app.api.routes import (
     ai as ai_router,
     analytics,
     auth,
+    companies,
     financial_data,
     reports,
     tenants,
@@ -158,4 +159,9 @@ app.include_router(
     tenants.router,
     prefix=f"{settings.API_V1_STR}/tenant",
     tags=["tenant"],
+)
+app.include_router(
+    companies.router,
+    prefix=f"{settings.API_V1_STR}/companies",
+    tags=["companies"],
 )

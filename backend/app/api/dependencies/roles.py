@@ -49,38 +49,88 @@ class RoleChecker:
             }
 
         current_user = session["user"]
-        supabase = session["supabase"]
-        if current_user is None or supabase is None:
+        supabase = session.get("supabase")
+        if current_user is None:
             raise ApiException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 code="AUTH_REQUIRED",
                 detail="Autenticación requerida.",
             )
 
-        try:
-            profile_response = (
-                supabase.table("user_profiles")
-                .select("role, tenant_id, is_active")
-                .eq("id", current_user.id)
-                .single()
-                .execute()
-            )
-        except Exception:
-            logger.exception("No se pudo obtener el perfil RBAC del usuario")
+        profile_data = None
+        db_url = settings.DATABASE_URL or settings.DIRECT_URL
+
+        # 1. Consultar PostgreSQL directo si DATABASE_URL está configurado (VPS nativo)
+        if db_url:
+            try:
+                import psycopg2
+                conn = psycopg2.connect(db_url)
+                cur = conn.cursor()
+                cur.execute(
+                    "SELECT role, tenant_id, is_active FROM public.user_profiles WHERE id = %s",
+                    (str(current_user.id),)
+                )
+                row = cur.fetchone()
+                cur.close()
+                conn.close()
+                if row:
+                    profile_data = {
+                        "role": row[0],
+                        "tenant_id": str(row[1]) if row[1] else None,
+                        "is_active": row[2] if row[2] is not None else True,
+                    }
+                else:
+                    raise ApiException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        code="PROFILE_NOT_FOUND",
+                        detail="Perfil de usuario no encontrado.",
+                    )
+            except ApiException:
+                raise
+            except Exception as e:
+                logger.warning(f"Error consultando perfil en PostgreSQL directo: {e}")
+
+        # 2. Si no se pudo por PostgreSQL, consultar Supabase si está disponible (tests o cloud)
+        if profile_data is None and supabase is not None:
+            try:
+                profile_response = (
+                    supabase.table("user_profiles")
+                    .select("role, tenant_id, is_active")
+                    .eq("id", current_user.id)
+                    .single()
+                    .execute()
+                )
+                if profile_response.data:
+                    profile_data = profile_response.data
+                else:
+                    raise ApiException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        code="PROFILE_NOT_FOUND",
+                        detail="Perfil de usuario no encontrado.",
+                    )
+            except ApiException:
+                raise
+            except Exception:
+                logger.warning("Fallo en lookup de perfil con Supabase")
+
+        # 3. Fallback a metadata del JWT si viene firmado nativamente
+        if profile_data is None and hasattr(current_user, "user_metadata") and isinstance(current_user.user_metadata, dict):
+            meta = current_user.user_metadata
+            if meta.get("role") and meta.get("tenant_id"):
+                profile_data = {
+                    "role": meta.get("role"),
+                    "tenant_id": str(meta.get("tenant_id")),
+                    "is_active": meta.get("is_active", True),
+                }
+
+        if profile_data is None:
             raise ApiException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 code="PROFILE_LOOKUP_FAILED",
                 detail="No se pudo validar el perfil del usuario.",
             )
 
-        if not profile_response.data:
-            raise ApiException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                code="PROFILE_NOT_FOUND",
-                detail="Perfil de usuario no encontrado.",
-            )
-
-        is_active = profile_response.data.get("is_active", True)
+        is_active = profile_data.get("is_active", True)
         if is_active is False:
             raise ApiException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -88,8 +138,8 @@ class RoleChecker:
                 detail="Tu cuenta de usuario se encuentra inactiva. Contacta al administrador.",
             )
 
-        user_role = profile_response.data.get("role")
-        tenant_id = profile_response.data.get("tenant_id")
+        user_role = profile_data.get("role")
+        tenant_id = profile_data.get("tenant_id")
         allowed_values = {role.value for role in self.allowed_roles}
 
         if user_role not in allowed_values:

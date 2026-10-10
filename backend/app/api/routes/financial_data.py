@@ -17,6 +17,7 @@ from app.core.upload_security import (
     validate_upload_size,
     validated_archive_members,
 )
+from app.core.config import settings
 from app.services.supabase_client import (
     get_supabase_admin_client,
     get_supabase_client,
@@ -47,32 +48,59 @@ def _require_client(client: Client | None, code: str) -> Client:
 
 
 def _ensure_company_belongs_to_tenant(
-    client: Client,
+    client: Client | None,
     company_id: str,
     tenant_id: str,
 ) -> None:
-    try:
-        response = (
-            client.table("companies")
-            .select("id")
-            .eq("id", company_id)
-            .eq("tenant_id", tenant_id)
-            .limit(1)
-            .execute()
-        )
-    except Exception:
-        logger.exception("Company ownership lookup failed")
-        raise ApiException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            code="COMPANY_LOOKUP_FAILED",
-            detail="No se pudo validar la empresa.",
-        )
-    if not response.data:
-        raise ApiException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            code="COMPANY_NOT_FOUND",
-            detail="Empresa no encontrada.",
-        )
+    db_url = settings.DATABASE_URL or settings.DIRECT_URL
+    if db_url:
+        try:
+            import psycopg2
+            conn = psycopg2.connect(db_url)
+            cur = conn.cursor()
+            cur.execute("SELECT id FROM public.companies WHERE id = %s AND tenant_id = %s LIMIT 1", (company_id, tenant_id))
+            row = cur.fetchone()
+            cur.close()
+            conn.close()
+            if not row:
+                raise ApiException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    code="COMPANY_NOT_FOUND",
+                    detail="Empresa no encontrada.",
+                )
+            return
+        except ApiException:
+            raise
+        except Exception:
+            logger.exception("Company ownership lookup failed in PostgreSQL")
+
+    if client:
+        try:
+            response = (
+                client.table("companies")
+                .select("id")
+                .eq("id", company_id)
+                .eq("tenant_id", tenant_id)
+                .limit(1)
+                .execute()
+            )
+            if not response.data:
+                raise ApiException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    code="COMPANY_NOT_FOUND",
+                    detail="Empresa no encontrada.",
+                )
+            return
+        except ApiException:
+            raise
+        except Exception:
+            logger.exception("Company ownership lookup failed")
+
+    raise ApiException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        code="COMPANY_LOOKUP_FAILED",
+        detail="No se pudo validar la empresa.",
+    )
 
 
 def _remove_storage_object(client: Client, path: str) -> None:

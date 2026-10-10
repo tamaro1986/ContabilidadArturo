@@ -54,14 +54,27 @@ export function useCompanies(
     if (!profile) {
       return;
     }
-    const { data, error } = await supabase
-      .from("companies")
-      .select("*")
-      .order("name");
-    if (error) {
-      throw error;
+    try {
+      const res = await fetchWithAuth("/companies");
+      if (res.ok) {
+        const data = await res.json();
+        setCompaniesList((data ?? []).map((row: CompanyRow) => mapCompany(row)));
+        return;
+      }
+    } catch {
+      // Fallback a Supabase si no responde el backend
     }
-    setCompaniesList((data ?? []).map((row) => mapCompany(row as CompanyRow)));
+    try {
+      const { data, error } = await supabase
+        .from("companies")
+        .select("*")
+        .order("name");
+      if (!error && data) {
+        setCompaniesList(data.map((row) => mapCompany(row as CompanyRow)));
+      }
+    } catch {
+      // Ignorar errores de Supabase si no está configurado
+    }
   }, [profile]);
 
   useEffect(() => {
@@ -77,31 +90,49 @@ export function useCompanies(
       throw new Error("No se pudo identificar el perfil o tenant.");
     }
     try {
-      const { data, error } = await supabase
-        .from("companies")
-        .insert([
-          {
-            tenant_id: profile.tenant_id,
-            user_id: profile.id,
-            name,
-            nit,
-          },
-        ])
-        .select()
-        .single();
-      if (error) {
-        throw error;
-      }
-      if (data) {
+      const res = await fetchWithAuth("/companies", {
+        method: "POST",
+        body: JSON.stringify({ name, nit }),
+      });
+      if (res.ok) {
+        const created = await res.json();
         setCompaniesList((current) => [
-          mapCompany(data as CompanyRow),
+          mapCompany(created as CompanyRow),
           ...current,
         ]);
+        return;
       }
-    } catch (error: unknown) {
-      throw new Error(
-        getErrorMessage(error, "No se pudo registrar la empresa."),
-      );
+      const errJson = await res.json().catch(() => ({}));
+      throw new Error(errJson.detail || "Error al registrar la empresa.");
+    } catch (apiErr: unknown) {
+      try {
+        const { data, error } = await supabase
+          .from("companies")
+          .insert([
+            {
+              tenant_id: profile.tenant_id,
+              user_id: profile.id,
+              name,
+              nit,
+            },
+          ])
+          .select()
+          .single();
+        if (error) {
+          throw error;
+        }
+        if (data) {
+          setCompaniesList((current) => [
+            mapCompany(data as CompanyRow),
+            ...current,
+          ]);
+          return;
+        }
+      } catch {
+        throw new Error(
+          getErrorMessage(apiErr, "No se pudo registrar la empresa."),
+        );
+      }
     }
   }
 

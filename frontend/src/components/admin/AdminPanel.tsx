@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { supabase } from '@/lib/supabaseClient';
+import { fetchWithAuth } from '@/lib/api';
 import { getErrorMessage } from '@/lib/errors';
 import UserManagementPanel from './UserManagementPanel';
 
@@ -43,11 +43,14 @@ export default function AdminPanel() {
   const fetchData = async () => {
     setIsLoading(true);
     try {
-      const [{ data: codes }, { data: tenantList }, { data: userList }] = await Promise.all([
-        supabase.from('promo_codes').select('*').order('created_at', { ascending: false }),
-        supabase.from('tenants').select('*').order('created_at', { ascending: false }),
-        supabase.from('user_profiles').select('*')
+      const [codesRes, tenantsRes, usersRes] = await Promise.all([
+        fetchWithAuth('/admin/promo-codes'),
+        fetchWithAuth('/admin/tenants'),
+        fetchWithAuth('/admin/users'),
       ]);
+      const codes = codesRes.ok ? await codesRes.json() : [];
+      const tenantList = tenantsRes.ok ? await tenantsRes.json() : [];
+      const userList = usersRes.ok ? await usersRes.json() : [];
       setPromoCodes(codes || []);
       setTenants(tenantList || []);
       setUsers(userList || []);
@@ -67,17 +70,18 @@ export default function AdminPanel() {
   const handleCreateCode = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const { error } = await supabase
-        .from('promo_codes')
-        .insert([{ 
-          code: newCode.toUpperCase(), 
-          days_granted: newDays, 
-          is_active: true,
-          tenant_id: newTenantId 
-        }]);
-      
-      if (error) throw error;
-      
+      const res = await fetchWithAuth('/admin/promo-codes', {
+        method: 'POST',
+        body: JSON.stringify({
+          code: newCode.toUpperCase(),
+          days_granted: newDays,
+          tenant_id: newTenantId || null,
+        }),
+      });
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.detail || 'Error al crear código');
+      }
       setNewCode('');
       fetchData();
     } catch (err: unknown) {
@@ -85,30 +89,27 @@ export default function AdminPanel() {
     }
   };
 
-  const toggleCode = async (id: string, currentStatus: boolean) => {
+  const toggleCode = async (id: string, _currentStatus?: boolean) => {
     try {
-      await supabase.from('promo_codes').update({ is_active: !currentStatus }).eq('id', id);
+      await fetchWithAuth(`/admin/promo-codes/${id}/toggle`, {
+        method: 'PATCH',
+      });
       fetchData();
     } catch {
       alert('Error al actualizar código.');
     }
   };
 
-  const handleExtendTrial = async (tenantId: string, currentTrialEnds: string, days: number = 30) => {
+  const handleExtendTrial = async (tenantId: string, _currentTrialEnds: string, days: number = 30) => {
     try {
-      const current = new Date(currentTrialEnds);
-      const now = new Date();
-      // Si ya expiró, sumamos a partir de hoy, si no, a partir de su fecha actual
-      const baseDate = current < now ? now : current;
-      baseDate.setDate(baseDate.getDate() + days);
-      
-      const { error } = await supabase
-        .from('tenants')
-        .update({ trial_ends_at: baseDate.toISOString() })
-        .eq('id', tenantId);
-        
-      if (error) throw error;
-      
+      const res = await fetchWithAuth(`/admin/tenants/${tenantId}/trial`, {
+        method: 'PATCH',
+        body: JSON.stringify({ days }),
+      });
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.detail || 'Error al extender la membresía.');
+      }
       fetchData();
     } catch (err: unknown) {
       alert(getErrorMessage(err, 'Error al extender la membresía.'));
