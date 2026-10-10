@@ -1,3 +1,7 @@
+import logging
+from datetime import datetime, timedelta, timezone
+import jwt
+import psycopg2
 from fastapi import APIRouter, Depends, HTTPException, status
 from supabase import Client
 from app.schemas.auth import (
@@ -8,7 +12,22 @@ from app.services.supabase_client import get_supabase_client, get_supabase_admin
 from app.core.security import get_current_user
 from app.core.config import settings
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
+
+def create_jwt_token(user_id: str, email: str, role: str, tenant_id: str) -> str:
+    now = datetime.now(timezone.utc)
+    payload = {
+        "sub": user_id,
+        "email": email,
+        "role": role,
+        "tenant_id": tenant_id,
+        "aud": "authenticated",
+        "iat": int(now.timestamp()),
+        "exp": int((now + timedelta(days=7)).timestamp()),
+    }
+    secret = settings.JWT_SECRET or settings.SUPABASE_KEY or settings.SUPABASE_ANON_KEY or "contabilidad-arturo-jwt-secret-key"
+    return jwt.encode(payload, secret, algorithm="HS256")
 
 @router.post("/invite")
 def invite_user(
@@ -133,69 +152,147 @@ def login(
     supabase: Client = Depends(get_supabase_client),
     admin_supabase: Client = Depends(get_supabase_admin_client)
 ):
-    try:
-        auth_response = supabase.auth.sign_in_with_password({
-            "email": user_in.email,
-            "password": user_in.password,
-        })
-        if not auth_response.session or not auth_response.user:
+    # 1. Autenticación nativa directa en PostgreSQL (VPS)
+    db_url = settings.DATABASE_URL or settings.DIRECT_URL
+    if db_url:
+        try:
+            conn = psycopg2.connect(db_url)
+            conn.autocommit = True
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT u.id, u.email, p.role, p.tenant_id, p.is_active
+                FROM auth.users u
+                JOIN public.user_profiles p ON p.id = u.id
+                WHERE LOWER(u.email) = LOWER(%s)
+                  AND u.encrypted_password = crypt(%s, u.encrypted_password);
+            """, (user_in.email, user_in.password))
+            row = cur.fetchone()
+            cur.close()
+            conn.close()
+
+            if row:
+                user_id, email, role, tenant_id, is_active = row
+                if is_active is False:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Tu cuenta de usuario ha sido desactivada. Contacta al administrador."
+                    )
+                token = create_jwt_token(
+                    user_id=str(user_id),
+                    email=str(email),
+                    role=str(role),
+                    tenant_id=str(tenant_id)
+                )
+                return {
+                    "access_token": token,
+                    "token_type": "bearer"
+                }
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.warning(f"Intento de autenticación local con PostgreSQL falló: {e}")
+
+    # 2. Fallback a Supabase si está disponible
+    if supabase is not None:
+        try:
+            auth_response = supabase.auth.sign_in_with_password({
+                "email": user_in.email,
+                "password": user_in.password,
+            })
+            if not auth_response.session or not auth_response.user:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Credenciales incorrectas."
+                )
+
+            client = admin_supabase or supabase
+            profile_res = client.table("user_profiles").select("is_active").eq("id", auth_response.user.id).single().execute()
+            if profile_res.data and profile_res.data.get("is_active") is False:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Tu cuenta de usuario ha sido desactivada. Contacta al administrador."
+                )
+
+            return {
+                "access_token": auth_response.session.access_token,
+                "token_type": "bearer"
+            }
+        except HTTPException:
+            raise
+        except Exception as e:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Credenciales incorrectas."
+                detail=str(e),
             )
 
-        client = admin_supabase or supabase
-        profile_res = client.table("user_profiles").select("is_active").eq("id", auth_response.user.id).single().execute()
-        if profile_res.data and profile_res.data.get("is_active") is False:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Tu cuenta de usuario ha sido desactivada. Contacta al administrador."
-            )
-
-        return {
-            "access_token": auth_response.session.access_token,
-            "token_type": "bearer"
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=str(e),
-        )
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Credenciales incorrectas (correo o contraseña no válidos)."
+    )
 
 @router.get("/me", response_model=UserResponse)
 def get_me(
     current_user = Depends(get_current_user),
     supabase: Client = Depends(get_supabase_client)
 ):
-    # Ya estamos autenticados y supabase.postgrest.auth(token) fue llamado en get_current_user
-    # por lo que el RLS aplicará aquí
-    try:
-        profile_res = supabase.table("user_profiles").select("*").eq("id", current_user.id).single().execute()
-        profile = profile_res.data
-        
-        # Obtener información del tenant para saber si está expirado
-        tenant_id = profile.get("tenant_id")
-        trial_ends_at = None
-        if tenant_id:
-            tenant_res = supabase.table("tenants").select("trial_ends_at").eq("id", tenant_id).single().execute()
-            if tenant_res.data:
-                trial_ends_at = tenant_res.data.get("trial_ends_at")
+    # 1. Consultar PostgreSQL directamente (VPS)
+    db_url = settings.DATABASE_URL or settings.DIRECT_URL
+    if db_url:
+        try:
+            conn = psycopg2.connect(db_url)
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT p.id, p.email, p.full_name, p.role, p.tenant_id, t.trial_ends_at
+                FROM public.user_profiles p
+                LEFT JOIN public.tenants t ON t.id = p.tenant_id
+                WHERE p.id = %s;
+            """, (current_user.id,))
+            row = cur.fetchone()
+            cur.close()
+            conn.close()
+            if row:
+                return {
+                    "id": str(row[0]),
+                    "email": row[1],
+                    "full_name": row[2],
+                    "role": row[3],
+                    "tenant_id": str(row[4]) if row[4] else None,
+                    "trial_ends_at": row[5].isoformat() if row[5] else None,
+                }
+        except Exception as e:
+            logger.warning(f"Error consultando /me en PostgreSQL: {e}")
 
-        return {
-            "id": current_user.id,
-            "email": current_user.email,
-            "full_name": profile.get("full_name"),
-            "role": profile.get("role"),
-            "tenant_id": tenant_id,
-            "trial_ends_at": trial_ends_at
-        }
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(e),
-        )
+    # 2. Fallback a Supabase si está disponible
+    if supabase is not None:
+        try:
+            profile_res = supabase.table("user_profiles").select("*").eq("id", current_user.id).single().execute()
+            profile = profile_res.data
+            
+            tenant_id = profile.get("tenant_id")
+            trial_ends_at = None
+            if tenant_id:
+                tenant_res = supabase.table("tenants").select("trial_ends_at").eq("id", tenant_id).single().execute()
+                if tenant_res.data:
+                    trial_ends_at = tenant_res.data.get("trial_ends_at")
+
+            return {
+                "id": current_user.id,
+                "email": current_user.email,
+                "full_name": profile.get("full_name"),
+                "role": profile.get("role"),
+                "tenant_id": tenant_id,
+                "trial_ends_at": trial_ends_at
+            }
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=str(e),
+            )
+
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail="Perfil de usuario no encontrado."
+    )
 
 @router.post("/forgot-password")
 def forgot_password(

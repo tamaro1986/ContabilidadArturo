@@ -79,6 +79,13 @@ function redirectToLogin(): void {
 }
 
 async function requireAccessToken(): Promise<string> {
+  if (typeof window !== "undefined") {
+    const localToken = window.localStorage.getItem("access_token");
+    if (localToken) {
+      return localToken;
+    }
+  }
+
   const {
     data: { session },
     error,

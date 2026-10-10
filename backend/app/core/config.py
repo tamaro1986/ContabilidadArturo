@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     NEXT_PUBLIC_SUPABASE_URL: str = ""
     NEXT_PUBLIC_SUPABASE_ANON_KEY: str = ""
     SUPABASE_SERVICE_ROLE_KEY: str = ""
+    JWT_SECRET: str = ""
     
     # URLs
     FRONTEND_URL: str = "http://localhost:3000"

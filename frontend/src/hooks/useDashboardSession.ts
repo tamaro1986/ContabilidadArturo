@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 
 import { supabase } from "@/lib/supabaseClient";
+import { fetchWithAuth } from "@/lib/api";
 
 export interface DashboardTenant {
   name?: string;
@@ -32,6 +33,43 @@ export function useDashboardSession() {
 
     async function loadSession(): Promise<void> {
       try {
+        // 1. Intentar cargar sesión vía /auth/me en el backend nativo del VPS
+        let meData: { id: string; email: string; full_name?: string; role?: string; tenant_id?: string; trial_ends_at?: string } | null = null;
+        try {
+          const res = await fetchWithAuth('/auth/me');
+          if (res.ok) {
+            meData = await res.json();
+          }
+        } catch {
+          // Fallback silencioso a supabase si no respondió
+        }
+
+        if (meData && !cancelled) {
+          const isMasterAdmin =
+            meData.email?.toLowerCase() === "garcia.integrum1@gmail.com";
+          const localToken = typeof window !== "undefined" ? window.localStorage.getItem("access_token") : "";
+          const mockSession = {
+            access_token: localToken || "",
+            token_type: "bearer",
+            user: { id: meData.id, email: meData.email } as unknown,
+          } as Session;
+
+          setSession(mockSession);
+          setIsAdmin(isMasterAdmin || meData.role === "administrador");
+          setUserProfile({
+            id: String(meData.id),
+            tenant_id: String(meData.tenant_id),
+            role: meData.role || "cliente",
+            full_name: meData.full_name || "Usuario",
+            tenants: {
+              name: "Integrum Firma Contable",
+              trial_ends_at: meData.trial_ends_at || new Date(Date.now() + 86400000 * 365).toISOString(),
+            },
+          });
+          setLoading(false);
+          return;
+        }
+
         const {
           data: { session: currentSession },
           error: sessionError,
@@ -111,7 +149,15 @@ export function useDashboardSession() {
   }, []);
 
   async function logout(): Promise<void> {
-    await supabase.auth.signOut();
+    if (typeof window !== "undefined") {
+      window.localStorage.removeItem("access_token");
+    }
+    try {
+      await supabase.auth.signOut();
+    } catch {}
+    if (typeof window !== "undefined") {
+      window.location.assign("/login");
+    }
   }
 
   return {

@@ -17,6 +17,12 @@ export default function AuthGuard({ children }: AuthGuardProps) {
   useEffect(() => {
     const checkUser = async () => {
       try {
+        if (typeof window !== 'undefined' && localStorage.getItem('access_token')) {
+          setUser({ id: 'active-session' } as User);
+          setLoading(false);
+          return;
+        }
+
         const { data: { user } } = await supabase.auth.getUser();
         setUser(user);
         

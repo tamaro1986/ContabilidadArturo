@@ -31,19 +31,40 @@ function LoginContent() {
     setLoading(true)
     setError(null)
     
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    })
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://api-contabilidad.51-161-114-131.sslip.io/api/v1'
+      const response = await fetch(`${apiUrl}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password })
+      })
 
-    if (error) {
-      setError(error.message)
+      const data = await response.json()
+      if (!response.ok) {
+        setError(data.detail || 'Credenciales incorrectas.')
+        setLoading(false)
+        return
+      }
+
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('access_token', data.access_token)
+      }
+
+      try {
+        await supabase.auth.setSession({
+          access_token: data.access_token,
+          refresh_token: data.access_token
+        })
+      } catch {
+        // En caso de que no haya conexión externa con Supabase
+      }
+
       setLoading(false)
-      return
+      router.push('/dashboard')
+    } catch {
+      setError('No fue posible conectar con el servidor de autenticación.')
+      setLoading(false)
     }
-
-    setLoading(false)
-    router.push('/dashboard')
   }
 
   return (

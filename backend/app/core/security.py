@@ -34,33 +34,58 @@ def get_authenticated_session(
             detail="Autenticación requerida.",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    if supabase is None:
+    token = credentials.credentials
+
+    # 1. Validación nativa de JWT en el VPS usando JWT_SECRET
+    jwt_secret = settings.JWT_SECRET or settings.SUPABASE_KEY or settings.SUPABASE_ANON_KEY
+    if jwt_secret:
+        try:
+            import jwt
+            from types import SimpleNamespace
+            payload = jwt.decode(
+                token,
+                jwt_secret,
+                algorithms=["HS256"],
+                options={"verify_aud": False}
+            )
+            user_id = payload.get("sub")
+            if user_id:
+                user = SimpleNamespace(
+                    id=str(user_id),
+                    email=payload.get("email"),
+                    user_metadata=payload,
+                )
+                if supabase:
+                    try:
+                        supabase.postgrest.auth(token)
+                    except Exception:
+                        pass
+                return {"user": user, "supabase": supabase, "token": token}
+        except Exception:
+            pass
+
+    # 2. Fallback a Supabase Auth si está configurado
+    if supabase is not None:
+        try:
+            response = supabase.auth.get_user(token)
+            if response.user:
+                supabase.postgrest.auth(token)
+                return {"user": response.user, "supabase": supabase, "token": token}
+        except Exception:
+            logger.warning("Supabase rechazó el token de autenticación", exc_info=True)
+
+    if not jwt_secret and supabase is None:
         raise ApiException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             code="AUTH_PROVIDER_UNAVAILABLE",
             detail="El servicio de autenticación no está disponible.",
         )
 
-    token = credentials.credentials
-    try:
-        response = supabase.auth.get_user(token)
-        if not response.user:
-            raise ApiException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                code="AUTH_INVALID",
-                detail="Credenciales de autenticación inválidas.",
-            )
-        supabase.postgrest.auth(token)
-        return {"user": response.user, "supabase": supabase, "token": token}
-    except ApiException:
-        raise
-    except Exception:
-        logger.warning("Supabase rechazó el token de autenticación", exc_info=True)
-        raise ApiException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            code="AUTH_INVALID",
-            detail="Credenciales de autenticación inválidas.",
-        )
+    raise ApiException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        code="AUTH_INVALID",
+        detail="Credenciales de autenticación inválidas o expiradas.",
+    )
 
 
 def get_current_user(
