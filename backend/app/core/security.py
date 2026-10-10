@@ -37,7 +37,7 @@ def get_authenticated_session(
     token = credentials.credentials
 
     # 1. Validación nativa de JWT en el VPS usando JWT_SECRET
-    jwt_secret = settings.JWT_SECRET or settings.SUPABASE_KEY or settings.SUPABASE_ANON_KEY
+    jwt_secret = settings.JWT_SECRET or settings.SUPABASE_KEY or settings.SUPABASE_ANON_KEY or "contabilidad-arturo-jwt-secret-key"
     if jwt_secret:
         try:
             import jwt
