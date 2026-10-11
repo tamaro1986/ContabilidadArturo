@@ -64,10 +64,20 @@ async function toApiError(response: Response): Promise<ApiError> {
     payload = undefined;
   }
 
-  const detail =
-    stringField(payload, "detail") ??
-    stringField(payload, "message") ??
-    "El servidor no pudo completar la solicitud.";
+  let detail: string | undefined =
+    stringField(payload, "detail") ?? stringField(payload, "message");
+
+  if (!detail && isRecord(payload) && Array.isArray(payload.detail) && payload.detail.length > 0) {
+    const first = payload.detail[0];
+    if (isRecord(first) && typeof first.msg === "string") {
+      detail = first.msg;
+    }
+  }
+
+  if (!detail) {
+    detail = "El servidor no pudo completar la solicitud.";
+  }
+
   const code = stringField(payload, "code") ?? `HTTP_${response.status}`;
   return new ApiError(response.status, code, detail);
 }

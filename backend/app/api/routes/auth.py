@@ -14,6 +14,7 @@ from app.schemas.auth import (
 from app.services.supabase_client import get_supabase_client, get_supabase_admin_client
 from app.core.security import get_current_user
 from app.core.config import settings
+from app.core.errors import ApiException
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -67,7 +68,7 @@ def invite_user(
 
     valid_roles = ["contador", "cliente"]
     if invite_in.role not in valid_roles:
-        raise HTTPException(status_code=400, detail="Rol inválido para invitación.")
+        raise ApiException(status_code=400, code="INVALID_ROLE", detail="Rol inválido para invitación.")
 
     db_url = settings.DATABASE_URL or settings.DIRECT_URL
     if db_url:
@@ -82,41 +83,57 @@ def invite_user(
             if not profile_row or profile_row[0] not in ["administrador", "contador"]:
                 cur.close()
                 conn.close()
-                raise HTTPException(status_code=403, detail="No tiene permisos para realizar invitaciones.")
+                raise ApiException(status_code=403, code="FORBIDDEN", detail="No tiene permisos para realizar invitaciones.")
 
             tenant_id = profile_row[1]
             if not tenant_id:
                 cur.close()
                 conn.close()
-                raise HTTPException(status_code=400, detail="El usuario no tiene una firma/tenant asociada.")
+                raise ApiException(status_code=400, code="NO_TENANT", detail="El usuario no tiene una firma/tenant asociada.")
 
             # Verificar si el correo ya existe
             cur.execute("SELECT id FROM auth.users WHERE LOWER(email) = LOWER(%s);", (invite_in.email,))
-            if cur.fetchone():
-                cur.close()
-                conn.close()
-                raise HTTPException(status_code=400, detail="Ya existe un usuario registrado con este correo electrónico.")
+            existing_row = cur.fetchone()
 
             # Generar contraseña temporal si no se especificó una
             temp_password = (invite_in.temp_password or "").strip()
             if not temp_password or len(temp_password) < 6:
                 temp_password = f"Integrum#{random.randint(1000, 9999)}"
 
-            user_id = str(uuid.uuid4())
-            # Insertar en auth.users
-            cur.execute("""
-                INSERT INTO auth.users (id, email, encrypted_password, email_confirmed_at, raw_user_meta_data)
-                VALUES (%s, %s, crypt(%s, gen_salt('bf')), NOW(), %s);
-            """, (
-                user_id,
-                invite_in.email,
-                temp_password,
-                psycopg2.extras.Json({
-                    "full_name": invite_in.full_name,
-                    "role": invite_in.role,
-                    "tenant_id": str(tenant_id)
-                })
-            ))
+            if existing_row:
+                user_id = str(existing_row[0])
+                # Actualizar credenciales y metadatos del usuario existente
+                cur.execute("""
+                    UPDATE auth.users 
+                    SET encrypted_password = crypt(%s, gen_salt('bf')),
+                        raw_user_meta_data = %s,
+                        updated_at = NOW()
+                    WHERE id = %s;
+                """, (
+                    temp_password,
+                    psycopg2.extras.Json({
+                        "full_name": invite_in.full_name,
+                        "role": invite_in.role,
+                        "tenant_id": str(tenant_id)
+                    }),
+                    user_id
+                ))
+            else:
+                user_id = str(uuid.uuid4())
+                # Insertar en auth.users
+                cur.execute("""
+                    INSERT INTO auth.users (id, email, encrypted_password, email_confirmed_at, raw_user_meta_data)
+                    VALUES (%s, %s, crypt(%s, gen_salt('bf')), NOW(), %s);
+                """, (
+                    user_id,
+                    invite_in.email,
+                    temp_password,
+                    psycopg2.extras.Json({
+                        "full_name": invite_in.full_name,
+                        "role": invite_in.role,
+                        "tenant_id": str(tenant_id)
+                    })
+                ))
 
             # Upsert en user_profiles
             cur.execute("""
@@ -133,21 +150,24 @@ def invite_user(
             cur.close()
             conn.close()
 
+            action_msg = "Credenciales actualizadas exitosamente." if existing_row else "Usuario registrado exitosamente con clave temporal."
             return {
-                "message": "Usuario registrado exitosamente con clave temporal.",
+                "message": action_msg,
                 "email": invite_in.email,
                 "full_name": invite_in.full_name,
                 "role": invite_in.role,
                 "temp_password": temp_password,
                 "login_url": resolved_login_url
             }
+        except ApiException:
+            raise
         except HTTPException:
             raise
         except Exception as e:
             logger.exception(f"Error procesando invitación: {e}")
-            raise HTTPException(status_code=400, detail=f"Error al procesar invitación: {str(e)}")
+            raise ApiException(status_code=400, code="INVITATION_ERROR", detail=f"Error al procesar invitación: {str(e)}")
 
-    raise HTTPException(status_code=500, detail="Servicio de base de datos no disponible.")
+    raise ApiException(status_code=503, code="SERVICE_UNAVAILABLE", detail="Servicio de base de datos no disponible.")
 
 @router.post("/register")
 def register(

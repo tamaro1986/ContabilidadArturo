@@ -41,7 +41,12 @@ export default function UserInvitationForm() {
 
             const data = await response.json();
             if (!response.ok) {
-                throw new Error(data.detail || "Error al procesar la invitación");
+                const detailMsg = typeof data.detail === "string"
+                    ? data.detail
+                    : (Array.isArray(data.detail) && data.detail[0]?.msg
+                        ? String(data.detail[0].msg)
+                        : (data.message || "Error al procesar la invitación"));
+                throw new Error(detailMsg);
             }
 
             const currentOrigin = typeof window !== "undefined" && window.location.origin ? window.location.origin : "";
