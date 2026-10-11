@@ -2,7 +2,6 @@
 
 import { useState, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { supabase } from '@/lib/supabaseClient'
 // ── Inline SVG Icons ───────────────────────────────────────────────────────────
 const Mail = ({ size = 20, className = "" }: { size?: number; className?: string }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={className}><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
@@ -48,15 +47,6 @@ function LoginContent() {
 
       if (typeof window !== 'undefined') {
         localStorage.setItem('access_token', data.access_token)
-      }
-
-      try {
-        await supabase.auth.setSession({
-          access_token: data.access_token,
-          refresh_token: data.access_token
-        })
-      } catch {
-        // En caso de que no haya conexión externa con Supabase
       }
 
       setLoading(false)

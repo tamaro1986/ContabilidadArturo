@@ -70,11 +70,27 @@ export function useDashboardSession() {
           return;
         }
 
-        const {
-          data: { session: currentSession },
-          error: sessionError,
-        } = await supabase.auth.getSession();
-        if (sessionError || !currentSession) {
+        // Si hay token guardado pero /auth/me falló (token expirado o inválido)
+        if (typeof window !== "undefined" && window.localStorage.getItem("access_token")) {
+          window.localStorage.removeItem("access_token");
+          window.location.assign("/login");
+          return;
+        }
+
+        let currentSession: Session | null = null;
+        try {
+          const {
+            data: { session: fetchedSession },
+            error: sessionError,
+          } = await supabase.auth.getSession();
+          if (!sessionError && fetchedSession) {
+            currentSession = fetchedSession;
+          }
+        } catch {
+          // Fallback ignorado si no hay Supabase
+        }
+
+        if (!currentSession) {
           if (typeof window !== "undefined") {
             window.location.assign("/login");
           }

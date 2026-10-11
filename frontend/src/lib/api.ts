@@ -86,27 +86,33 @@ async function requireAccessToken(): Promise<string> {
     }
   }
 
-  const {
-    data: { session },
-    error,
-  } = await supabase.auth.getSession();
+  try {
+    const {
+      data: { session },
+      error,
+    } = await supabase.auth.getSession();
 
-  if (error || !session?.access_token) {
+    if (error || !session?.access_token) {
+      redirectToLogin();
+      throw new ApiError(401, "AUTH_REQUIRED", "No hay una sesión activa.");
+    }
+
+    const now = Math.floor(Date.now() / 1000);
+    if (session.expires_at && session.expires_at - now < 60) {
+      const { data, error: refreshError } = await getSharedRefreshSession();
+      if (refreshError || !data.session?.access_token) {
+        redirectToLogin();
+        throw new ApiError(401, "AUTH_EXPIRED", "La sesión ha expirado.");
+      }
+      return data.session.access_token;
+    }
+
+    return session.access_token;
+  } catch (err) {
+    if (err instanceof ApiError) throw err;
     redirectToLogin();
     throw new ApiError(401, "AUTH_REQUIRED", "No hay una sesión activa.");
   }
-
-  const now = Math.floor(Date.now() / 1000);
-  if (session.expires_at && session.expires_at - now < 60) {
-    const { data, error: refreshError } = await getSharedRefreshSession();
-    if (refreshError || !data.session?.access_token) {
-      redirectToLogin();
-      throw new ApiError(401, "AUTH_EXPIRED", "La sesión ha expirado.");
-    }
-    return data.session.access_token;
-  }
-
-  return session.access_token;
 }
 
 function buildHeaders(options: RequestInit, accessToken: string): Headers {
