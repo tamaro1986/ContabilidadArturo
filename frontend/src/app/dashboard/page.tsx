@@ -887,7 +887,7 @@ export default function DashboardPage() {
                                 </div>
                             )}
 
-                            {activeTab === 'invitations' && isAdmin && (
+                            {activeTab === 'invitations' && (isAdmin || userProfile?.role === 'contador') && (
                                 <div className="animate-in fade-in slide-in-from-bottom-6 duration-700 space-y-6">
                                     <button 
                                         onClick={() => setActiveTab('config')}
