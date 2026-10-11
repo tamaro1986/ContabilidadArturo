@@ -31,6 +31,7 @@ class UserInvite(BaseModel):
     email: EmailStr
     full_name: str
     role: str = "cliente"
+    temp_password: Optional[str] = None
 
 class ForgotPasswordRequest(BaseModel):
     email: EmailStr

@@ -1,7 +1,10 @@
 import logging
+import random
+import uuid
 from datetime import datetime, timedelta, timezone
 import jwt
 import psycopg2
+import psycopg2.extras
 from fastapi import APIRouter, Depends, HTTPException, status
 from supabase import Client
 from app.schemas.auth import (
@@ -36,47 +39,101 @@ def invite_user(
     supabase: Client = Depends(get_supabase_client),
     admin_supabase: Client = Depends(get_supabase_admin_client)
 ):
-    # 1. Fetch current user profile to verify role and get tenant_id
-    profile = supabase.table("user_profiles").select("*").eq("id", current_user.id).single().execute()
-    if not profile.data or profile.data.get("role") not in ["contador", "administrador"]:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="No tiene permisos para realizar invitaciones."
-        )
-    tenant_id = profile.data.get("tenant_id")
-
-    # Bypass para desarrollo local si MOCK_MODE está activo
     if settings.MOCK_MODE:
-        return {"message": f"[MOCK] Invitación enviada exitosamente a {invite_in.email} para el tenant {tenant_id}"}
+        temp_pw = invite_in.temp_password or "Integrum#2026"
+        return {
+            "message": "Usuario invitado y activado exitosamente.",
+            "email": invite_in.email,
+            "full_name": invite_in.full_name,
+            "role": invite_in.role,
+            "temp_password": temp_pw,
+            "login_url": f"{settings.FRONTEND_URL}/login"
+        }
 
-    if not admin_supabase:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Configuración de Administrador de Supabase incompleta (Service Role Key faltante)."
-        )
+    valid_roles = ["contador", "cliente"]
+    if invite_in.role not in valid_roles:
+        raise HTTPException(status_code=400, detail="Rol inválido para invitación.")
 
-    try:
-        # 2. Perform the invitation via Supabase Auth Admin API
-        # We inject the tenant_id and role into the raw_user_meta_data
-        # so the DB trigger can pick it up.
-        redirect_url = f"{settings.FRONTEND_URL}/auth/set-password"
-        admin_supabase.auth.admin.invite_user_by_email(
-            invite_in.email,
-            {
-                "data": {
+    db_url = settings.DATABASE_URL or settings.DIRECT_URL
+    if db_url:
+        try:
+            conn = psycopg2.connect(db_url)
+            conn.autocommit = True
+            cur = conn.cursor()
+
+            # Verificar permisos del usuario actual
+            cur.execute("SELECT role, tenant_id FROM public.user_profiles WHERE id = %s;", (str(current_user.id),))
+            profile_row = cur.fetchone()
+            if not profile_row or profile_row[0] not in ["administrador", "contador"]:
+                cur.close()
+                conn.close()
+                raise HTTPException(status_code=403, detail="No tiene permisos para realizar invitaciones.")
+
+            tenant_id = profile_row[1]
+            if not tenant_id:
+                cur.close()
+                conn.close()
+                raise HTTPException(status_code=400, detail="El usuario no tiene una firma/tenant asociada.")
+
+            # Verificar si el correo ya existe
+            cur.execute("SELECT id FROM auth.users WHERE LOWER(email) = LOWER(%s);", (invite_in.email,))
+            if cur.fetchone():
+                cur.close()
+                conn.close()
+                raise HTTPException(status_code=400, detail="Ya existe un usuario registrado con este correo electrónico.")
+
+            # Generar contraseña temporal si no se especificó una
+            temp_password = (invite_in.temp_password or "").strip()
+            if not temp_password or len(temp_password) < 6:
+                temp_password = f"Integrum#{random.randint(1000, 9999)}"
+
+            user_id = str(uuid.uuid4())
+            # Insertar en auth.users
+            cur.execute("""
+                INSERT INTO auth.users (id, email, encrypted_password, email_confirmed_at, raw_user_meta_data)
+                VALUES (%s, %s, crypt(%s, gen_salt('bf')), NOW(), %s);
+            """, (
+                user_id,
+                invite_in.email,
+                temp_password,
+                psycopg2.extras.Json({
                     "full_name": invite_in.full_name,
                     "role": invite_in.role,
-                    "tenant_id": tenant_id
-                },
-                "redirectTo": redirect_url
+                    "tenant_id": str(tenant_id)
+                })
+            ))
+
+            # Upsert en user_profiles
+            cur.execute("""
+                INSERT INTO public.user_profiles (id, email, full_name, role, tenant_id, is_active)
+                VALUES (%s, %s, %s, %s, %s, TRUE)
+                ON CONFLICT (id) DO UPDATE SET
+                    email = EXCLUDED.email,
+                    full_name = EXCLUDED.full_name,
+                    role = EXCLUDED.role,
+                    tenant_id = EXCLUDED.tenant_id,
+                    is_active = TRUE;
+            """, (user_id, invite_in.email, invite_in.full_name, invite_in.role, str(tenant_id)))
+
+            cur.close()
+            conn.close()
+
+            login_url = f"{settings.FRONTEND_URL}/login"
+            return {
+                "message": "Usuario registrado exitosamente con clave temporal.",
+                "email": invite_in.email,
+                "full_name": invite_in.full_name,
+                "role": invite_in.role,
+                "temp_password": temp_password,
+                "login_url": login_url
             }
-        )
-        return {"message": f"Invitación enviada exitosamente a {invite_in.email}"}
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
-        )
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.exception(f"Error procesando invitación: {e}")
+            raise HTTPException(status_code=400, detail=f"Error al procesar invitación: {str(e)}")
+
+    raise HTTPException(status_code=500, detail="Servicio de base de datos no disponible.")
 
 @router.post("/register")
 def register(
