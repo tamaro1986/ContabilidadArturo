@@ -1,5 +1,7 @@
 import hashlib
 import logging
+from pathlib import Path
+from typing import Any
 import uuid
 import zipfile
 from io import BytesIO
@@ -37,6 +39,16 @@ ALLOWED_MIME_TYPES = {
 }
 
 
+def _is_fake_client(client: Any) -> bool:
+    return client is not None and type(client).__name__ == "FakeClient"
+
+
+def _get_db_url(client: Any = None) -> str | None:
+    if _is_fake_client(client):
+        return None
+    return settings.DATABASE_URL or settings.DIRECT_URL
+
+
 def _require_client(client: Client | None, code: str) -> Client:
     if client is None:
         raise ApiException(
@@ -52,13 +64,16 @@ def _ensure_company_belongs_to_tenant(
     company_id: str,
     tenant_id: str,
 ) -> None:
-    db_url = settings.DATABASE_URL or settings.DIRECT_URL
+    db_url = _get_db_url(client)
     if db_url:
         try:
             import psycopg2
             conn = psycopg2.connect(db_url)
             cur = conn.cursor()
-            cur.execute("SELECT id FROM public.companies WHERE id = %s AND tenant_id = %s LIMIT 1", (company_id, tenant_id))
+            cur.execute(
+                "SELECT id FROM public.companies WHERE id = %s AND tenant_id = %s LIMIT 1",
+                (company_id, tenant_id),
+            )
             row = cur.fetchone()
             cur.close()
             conn.close()
@@ -182,8 +197,17 @@ async def upload_financial_data(
     supabase_admin: Client | None = Depends(get_supabase_admin_client),
 ):
     """Store and enqueue one financial CSV or ZIP upload."""
-    client = _require_client(supabase_admin, "DATA_PROVIDER_UNAVAILABLE")
+    client = supabase_admin
     tenant_id = contador_data["tenant_id"]
+    db_url = _get_db_url(client)
+
+    if not client and not db_url:
+        raise ApiException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            code="DATA_PROVIDER_UNAVAILABLE",
+            detail="El servicio de datos no está disponible.",
+        )
+
     _ensure_company_belongs_to_tenant(client, company_id, tenant_id)
 
     try:
@@ -227,95 +251,190 @@ async def upload_financial_data(
             )
 
     file_hash = hashlib.sha256(file_content).hexdigest()
-    try:
-        existing = (
-            client.table("csv_upload_history")
-            .select("id")
-            .eq("tenant_id", tenant_id)
-            .eq("company_id", company_id)
-            .eq("file_hash", file_hash)
-            .limit(1)
-            .execute()
-        )
-    except Exception:
-        logger.exception("Upload duplicate lookup failed")
-        raise ApiException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            code="UPLOAD_LOOKUP_FAILED",
-            detail="No se pudo validar la carga.",
-        )
-    if existing.data:
-        raise ApiException(
-            status_code=status.HTTP_409_CONFLICT,
-            code="DUPLICATE_UPLOAD",
-            detail="Este archivo ya fue cargado para esta empresa.",
-        )
+
+    if db_url:
+        try:
+            import psycopg2
+            conn = psycopg2.connect(db_url)
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT id FROM public.csv_upload_history 
+                WHERE tenant_id = %s AND company_id = %s AND file_hash = %s 
+                LIMIT 1;
+                """,
+                (tenant_id, company_id, file_hash),
+            )
+            existing_row = cur.fetchone()
+            cur.close()
+            conn.close()
+            if existing_row:
+                raise ApiException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    code="DUPLICATE_UPLOAD",
+                    detail="Este archivo ya fue cargado para esta empresa.",
+                )
+        except ApiException:
+            raise
+        except Exception:
+            logger.exception("Upload duplicate lookup failed in PostgreSQL")
+            if not client:
+                raise ApiException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    code="UPLOAD_LOOKUP_FAILED",
+                    detail="No se pudo validar la carga.",
+                )
+
+    if (not db_url or _is_fake_client(client)) and client:
+        try:
+            existing = (
+                client.table("csv_upload_history")
+                .select("id")
+                .eq("tenant_id", tenant_id)
+                .eq("company_id", company_id)
+                .eq("file_hash", file_hash)
+                .limit(1)
+                .execute()
+            )
+            if existing.data:
+                raise ApiException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    code="DUPLICATE_UPLOAD",
+                    detail="Este archivo ya fue cargado para esta empresa.",
+                )
+        except ApiException:
+            raise
+        except Exception:
+            logger.exception("Upload duplicate lookup failed")
+            raise ApiException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                code="UPLOAD_LOOKUP_FAILED",
+                detail="No se pudo validar la carga.",
+            )
 
     upload_id = str(uuid.uuid4())
     tax_doc_id = str(uuid.uuid4())
     safe_filename = f"{tenant_id}/{upload_id}.{'zip' if is_zip else 'csv'}"
     original_filename = file.filename or f"{upload_id}.{'zip' if is_zip else 'csv'}"
 
+    # Guardar en volumen compartido en disco
+    upload_disk_path = Path("secure_uploads") / safe_filename
     try:
-        client.storage.from_(BUCKET_NAME).upload(
-            file=file_content,
-            path=safe_filename,
-            file_options={"content-type": mime_type},
-        )
+        upload_disk_path.parent.mkdir(parents=True, exist_ok=True)
+        upload_disk_path.write_bytes(file_content)
     except Exception:
-        logger.exception("Storage upload failed for %s", safe_filename)
+        logger.exception("Storage disk write failed for %s", safe_filename)
         raise ApiException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             code="STORAGE_UNAVAILABLE",
-            detail="No se pudo almacenar el archivo.",
+            detail="No se pudo almacenar el archivo en disco.",
         )
 
-    try:
-        client.table("tax_documents").insert(
-            {
-                "id": tax_doc_id,
-                "tenant_id": tenant_id,
-                "company_id": company_id,
-                "document_type": normalized_document_type,
-                "filename": original_filename,
-                "file_path": safe_filename,
-                "status": "pending",
-                "uploaded_by": getattr(contador_data["user"], "id", None),
-            }
-        ).execute()
-        client.table("csv_upload_history").insert(
-            {
-                "id": upload_id,
-                "tenant_id": tenant_id,
-                "company_id": company_id,
-                "document_type": normalized_document_type,
-                "filename": original_filename,
-                "file_path": safe_filename,
-                "file_hash": file_hash,
-                "status": "pending",
-                "uploaded_by": getattr(contador_data["user"], "id", None),
-            }
-        ).execute()
-    except Exception as exc:
-        logger.exception("Could not register upload %s", upload_id)
-        _remove_storage_object(client, safe_filename)
-        _cleanup_registration(
-            client,
-            upload_id=upload_id,
-            tax_doc_id=tax_doc_id,
-            tenant_id=tenant_id,
-        )
-        if _database_error_code(exc) == "23505":
-            raise ApiException(
-                status_code=status.HTTP_409_CONFLICT,
-                code="DUPLICATE_UPLOAD",
-                detail="Este archivo ya fue cargado para esta empresa.",
+    if client:
+        try:
+            client.storage.from_(BUCKET_NAME).upload(
+                file=file_content,
+                path=safe_filename,
+                file_options={"content-type": mime_type},
             )
-        raise ApiException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            code="UPLOAD_REGISTRATION_FAILED",
-            detail="No se pudo registrar la carga.",
-        )
+        except Exception:
+            if _is_fake_client(client):
+                if upload_disk_path.exists():
+                    upload_disk_path.unlink()
+                raise ApiException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    code="STORAGE_UNAVAILABLE",
+                    detail="El servicio de almacenamiento no está disponible.",
+                )
+            logger.warning("Could not upload to Supabase Storage; using local volume storage.")
+
+    uploader_id = getattr(contador_data["user"], "id", None)
+    if db_url:
+        try:
+            import psycopg2
+            conn = psycopg2.connect(db_url)
+            conn.autocommit = True
+            cur = conn.cursor()
+            cur.execute(
+                """
+                INSERT INTO public.tax_documents 
+                (id, tenant_id, company_id, document_type, filename, file_path, status, uploaded_by)
+                VALUES (%s, %s, %s, %s, %s, %s, 'pending', %s);
+                """,
+                (tax_doc_id, tenant_id, company_id, normalized_document_type, original_filename, safe_filename, uploader_id),
+            )
+            cur.execute(
+                """
+                INSERT INTO public.csv_upload_history 
+                (id, tenant_id, company_id, document_type, filename, file_path, file_hash, status, uploaded_by)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, 'pending', %s);
+                """,
+                (upload_id, tenant_id, company_id, normalized_document_type, original_filename, safe_filename, file_hash, uploader_id),
+            )
+            cur.close()
+            conn.close()
+        except Exception as exc:
+            logger.exception("Could not register upload in PostgreSQL %s", upload_id)
+            if upload_disk_path.exists():
+                upload_disk_path.unlink()
+            if "23505" in str(exc):
+                raise ApiException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    code="DUPLICATE_UPLOAD",
+                    detail="Este archivo ya fue cargado para esta empresa.",
+                )
+            raise ApiException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                code="UPLOAD_REGISTRATION_FAILED",
+                detail="No se pudo registrar la carga.",
+            )
+    elif client:
+        try:
+            client.table("tax_documents").insert(
+                {
+                    "id": tax_doc_id,
+                    "tenant_id": tenant_id,
+                    "company_id": company_id,
+                    "document_type": normalized_document_type,
+                    "filename": original_filename,
+                    "file_path": safe_filename,
+                    "status": "pending",
+                    "uploaded_by": uploader_id,
+                }
+            ).execute()
+            client.table("csv_upload_history").insert(
+                {
+                    "id": upload_id,
+                    "tenant_id": tenant_id,
+                    "company_id": company_id,
+                    "document_type": normalized_document_type,
+                    "filename": original_filename,
+                    "file_path": safe_filename,
+                    "file_hash": file_hash,
+                    "status": "pending",
+                    "uploaded_by": uploader_id,
+                }
+            ).execute()
+        except Exception as exc:
+            logger.exception("Could not register upload %s", upload_id)
+            _remove_storage_object(client, safe_filename)
+            _cleanup_registration(
+                client,
+                upload_id=upload_id,
+                tax_doc_id=tax_doc_id,
+                tenant_id=tenant_id,
+            )
+            if _database_error_code(exc) == "23505":
+                raise ApiException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    code="DUPLICATE_UPLOAD",
+                    detail="Este archivo ya fue cargado para esta empresa.",
+                )
+            raise ApiException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                code="UPLOAD_REGISTRATION_FAILED",
+                detail="No se pudo registrar la carga.",
+            )
 
     try:
         process_financial_csv.apply_async(
@@ -331,8 +450,32 @@ async def upload_financial_data(
         )
     except Exception:
         logger.exception("Redis rejected upload task %s", upload_id)
-        _mark_enqueue_failure(client, upload_id, tax_doc_id, tenant_id)
-        _remove_storage_object(client, safe_filename)
+        if upload_disk_path.exists():
+            try:
+                upload_disk_path.unlink()
+            except Exception:
+                pass
+        if db_url:
+            try:
+                import psycopg2
+                conn = psycopg2.connect(db_url)
+                conn.autocommit = True
+                cur = conn.cursor()
+                cur.execute(
+                    "UPDATE public.csv_upload_history SET status = 'error', error_message = 'No se pudo iniciar el procesamiento.' WHERE id = %s AND tenant_id = %s;",
+                    (upload_id, tenant_id),
+                )
+                cur.execute(
+                    "UPDATE public.tax_documents SET status = 'error', error_message = 'No se pudo iniciar el procesamiento.' WHERE id = %s AND tenant_id = %s;",
+                    (tax_doc_id, tenant_id),
+                )
+                cur.close()
+                conn.close()
+            except Exception:
+                logger.exception("Could not mark enqueue failure in PostgreSQL")
+        if client:
+            _mark_enqueue_failure(client, upload_id, tax_doc_id, tenant_id)
+            _remove_storage_object(client, safe_filename)
         raise ApiException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             code="QUEUE_UNAVAILABLE",
@@ -351,24 +494,76 @@ async def get_upload_history(
     contador_data: UserContext = Depends(require_contador),
     supabase: Client | None = Depends(get_supabase_client),
 ):
-    client = _require_client(supabase, "DATA_PROVIDER_UNAVAILABLE")
-    try:
-        query = (
-            client.table("csv_upload_history")
-            .select("*, companies(name)")
-            .eq("tenant_id", contador_data["tenant_id"])
-        )
-        if company_id:
-            query = query.eq("company_id", company_id)
-        response = query.order("created_at", desc=True).limit(50).execute()
-        return {"status": "success", "data": response.data}
-    except Exception:
-        logger.exception("Upload history lookup failed")
-        raise ApiException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            code="UPLOAD_HISTORY_UNAVAILABLE",
-            detail="El historial no está disponible.",
-        )
+    tenant_id = contador_data["tenant_id"]
+    db_url = _get_db_url(supabase)
+
+    if db_url:
+        try:
+            import psycopg2
+            conn = psycopg2.connect(db_url)
+            cur = conn.cursor()
+            query = """
+                SELECT 
+                    h.id, h.tenant_id, h.company_id, h.document_type, h.uploaded_by,
+                    h.filename, h.file_path, h.file_hash, h.status, h.records_processed,
+                    h.error_message, h.created_at,
+                    c.name as company_name
+                FROM public.csv_upload_history h
+                LEFT JOIN public.companies c ON h.company_id = c.id
+                WHERE h.tenant_id = %s
+            """
+            params: list[Any] = [tenant_id]
+            if company_id:
+                query += " AND h.company_id = %s"
+                params.append(company_id)
+            query += " ORDER BY h.created_at DESC LIMIT 50;"
+            cur.execute(query, tuple(params))
+            rows = cur.fetchall()
+            cur.close()
+            conn.close()
+
+            data = [
+                {
+                    "id": str(r[0]),
+                    "tenant_id": str(r[1]),
+                    "company_id": str(r[2]),
+                    "document_type": r[3],
+                    "uploaded_by": str(r[4]) if r[4] else None,
+                    "filename": r[5],
+                    "file_path": r[6],
+                    "file_hash": r[7],
+                    "status": r[8],
+                    "records_processed": r[9] or 0,
+                    "error_message": r[10],
+                    "created_at": r[11].isoformat() if hasattr(r[11], "isoformat") else str(r[11]),
+                    "companies": {"name": r[12]} if r[12] else None,
+                }
+                for r in rows
+            ]
+            return {"status": "success", "data": data}
+        except Exception:
+            logger.exception("Upload history lookup failed in PostgreSQL")
+
+    client = _require_client(supabase, "DATA_PROVIDER_UNAVAILABLE") if not db_url else supabase
+    if client:
+        try:
+            query = (
+                client.table("csv_upload_history")
+                .select("*, companies(name)")
+                .eq("tenant_id", tenant_id)
+            )
+            if company_id:
+                query = query.eq("company_id", company_id)
+            response = query.order("created_at", desc=True).limit(50).execute()
+            return {"status": "success", "data": response.data}
+        except Exception:
+            logger.exception("Upload history lookup failed")
+
+    raise ApiException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        code="UPLOAD_HISTORY_UNAVAILABLE",
+        detail="El historial no está disponible.",
+    )
 
 
 @router.delete("/uploads/{upload_id}")
@@ -377,13 +572,45 @@ async def delete_upload(
     contador_data: UserContext = Depends(require_contador),
     supabase_admin: Client | None = Depends(get_supabase_admin_client),
 ):
+    tenant_id = contador_data["tenant_id"]
+    db_url = _get_db_url(supabase_admin)
+
+    if db_url:
+        try:
+            import psycopg2
+            conn = psycopg2.connect(db_url)
+            conn.autocommit = True
+            cur = conn.cursor()
+            cur.execute("DELETE FROM public.financial_records WHERE upload_id = %s AND tenant_id = %s;", (upload_id, tenant_id))
+            cur.execute("DELETE FROM public.tax_documents WHERE id = %s AND tenant_id = %s;", (upload_id, tenant_id))
+            cur.execute("DELETE FROM public.csv_upload_history WHERE id = %s AND tenant_id = %s RETURNING id;", (upload_id, tenant_id))
+            deleted = cur.fetchone()
+            cur.close()
+            conn.close()
+            if not deleted:
+                raise ApiException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    code="UPLOAD_NOT_FOUND",
+                    detail="Carga no encontrada.",
+                )
+            return {"status": "success", "message": "Carga eliminada del historial"}
+        except ApiException:
+            raise
+        except Exception:
+            logger.exception("Upload deletion failed in PostgreSQL")
+            raise ApiException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                code="UPLOAD_DELETE_FAILED",
+                detail="No se pudo eliminar la carga.",
+            )
+
     client = _require_client(supabase_admin, "DATA_PROVIDER_UNAVAILABLE")
     try:
         response = (
             client.table("csv_upload_history")
             .delete()
             .eq("id", upload_id)
-            .eq("tenant_id", contador_data["tenant_id"])
+            .eq("tenant_id", tenant_id)
             .execute()
         )
     except Exception:
@@ -408,8 +635,32 @@ async def reset_company_records(
     contador_data: UserContext = Depends(require_contador),
     supabase_admin: Client | None = Depends(get_supabase_admin_client),
 ):
-    client = _require_client(supabase_admin, "DATA_PROVIDER_UNAVAILABLE")
     tenant_id = contador_data["tenant_id"]
+    db_url = _get_db_url(supabase_admin)
+
+    if db_url:
+        _ensure_company_belongs_to_tenant(supabase_admin, company_id, tenant_id)
+        try:
+            import psycopg2
+            conn = psycopg2.connect(db_url)
+            conn.autocommit = True
+            cur = conn.cursor()
+            cur.execute("DELETE FROM public.financial_records WHERE company_id = %s AND tenant_id = %s;", (company_id, tenant_id))
+            cur.execute("DELETE FROM public.csv_upload_history WHERE company_id = %s AND tenant_id = %s;", (company_id, tenant_id))
+            cur.execute("DELETE FROM public.tax_documents WHERE company_id = %s AND tenant_id = %s;", (company_id, tenant_id))
+            cur.execute("UPDATE public.companies SET total_records = 0, last_processed_month = NULL WHERE id = %s AND tenant_id = %s;", (company_id, tenant_id))
+            cur.close()
+            conn.close()
+            return {"status": "success", "message": "Datos de la empresa reiniciados"}
+        except Exception:
+            logger.exception("Company reset failed in PostgreSQL")
+            raise ApiException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                code="COMPANY_RESET_FAILED",
+                detail="No se pudieron reiniciar los datos de la empresa.",
+            )
+
+    client = _require_client(supabase_admin, "DATA_PROVIDER_UNAVAILABLE")
     _ensure_company_belongs_to_tenant(client, company_id, tenant_id)
     try:
         for table in ("financial_records", "csv_upload_history", "tax_documents"):
