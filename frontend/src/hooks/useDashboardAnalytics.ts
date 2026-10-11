@@ -23,6 +23,7 @@ async function fetchData<T>(endpoint: string): Promise<T> {
 export function useDashboardAnalytics(
   enabled: boolean,
   refreshTrigger: number,
+  companyId?: string | null,
 ) {
   const [trendsData, setTrendsData] = useState<TrendData[]>([]);
   const [typesData, setTypesData] = useState<{
@@ -48,7 +49,8 @@ export function useDashboardAnalytics(
       setError(null);
       try {
         let year = selectedYear;
-        const years = await fetchData<number[]>("/analytics/years");
+        const yearsQuery = companyId ? `?company_id=${companyId}` : "";
+        const years = await fetchData<number[]>(`/analytics/years${yearsQuery}`);
         if (cancelled) {
           return;
         }
@@ -57,7 +59,11 @@ export function useDashboardAnalytics(
           year = years[0];
           setSelectedYear(year);
         }
-        const query = year ? `?year=${year}` : "";
+        const params = new URLSearchParams();
+        if (year) params.append("year", String(year));
+        if (companyId) params.append("company_id", companyId);
+        const query = params.toString() ? `?${params.toString()}` : "";
+
         const [
           trends,
           breakdown,
@@ -106,7 +112,7 @@ export function useDashboardAnalytics(
     return () => {
       cancelled = true;
     };
-  }, [enabled, refreshTrigger, selectedYear]);
+  }, [enabled, refreshTrigger, selectedYear, companyId]);
 
   return {
     trendsData,

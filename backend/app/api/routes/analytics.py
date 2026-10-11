@@ -1,3 +1,4 @@
+from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from app.api.dependencies.roles import require_cliente
 from app.services.duckdb_client import get_duckdb_client
@@ -40,6 +41,7 @@ SEGMENT_MAPPING = {
 @router.get("/years")
 @cache_response(expire=3600)
 def get_available_years(
+    company_id: Optional[str] = None,
     user_data: dict = Depends(require_cliente),
     duck_con = Depends(get_duckdb_client)
 ):
@@ -51,10 +53,11 @@ def get_available_years(
         SELECT DISTINCT EXTRACT('year' FROM transaction_date) as year_val
         FROM pg.public.financial_records
         WHERE tenant_id = ? AND transaction_date IS NOT NULL AND status = 'Valido'
+          AND (? IS NULL OR CAST(company_id AS VARCHAR) = ?)
         ORDER BY year_val DESC;
     """
     try:
-        results = duck_con.execute(query, [tenant_id]).fetchall()
+        results = duck_con.execute(query, [tenant_id, company_id, company_id]).fetchall()
         years = [int(row[0]) for row in results if row[0] is not None]
         return {
             "status": "success",
@@ -67,6 +70,7 @@ def get_available_years(
 @cache_response(expire=3600)
 def get_rfm_analysis(
     year: int = None,
+    company_id: Optional[str] = None,
     user_data: dict = Depends(require_cliente),
     duck_con = Depends(get_duckdb_client)
 ):
@@ -86,6 +90,7 @@ def get_rfm_analysis(
             WHERE tenant_id = ? AND status = 'Valido'
               AND transaction_type IN ('Ventas Contribuyente', 'Ventas Consumidor')
               AND (?::int IS NULL OR EXTRACT('year' FROM transaction_date) = ?::int)
+              AND (? IS NULL OR CAST(company_id AS VARCHAR) = ?)
             GROUP BY client_id
         ),
         rfm_scores AS (
@@ -118,7 +123,7 @@ def get_rfm_analysis(
     """
  
     try:
-        results = duck_con.execute(query, [tenant_id, year, year]).fetchall()
+        results = duck_con.execute(query, [tenant_id, year, year, company_id, company_id]).fetchall()
         columns = [desc[0] for desc in duck_con.description]
         
         raw_data = [dict(zip(columns, row)) for row in results]
@@ -443,6 +448,7 @@ def get_document_health(
 @cache_response(expire=3600)
 def get_financial_trends(
     year: int = None,
+    company_id: Optional[str] = None,
     user_data: dict = Depends(require_cliente),
     duck_con = Depends(get_duckdb_client)
 ):
@@ -459,6 +465,7 @@ def get_financial_trends(
                 SUM(CASE WHEN transaction_type IN ('Compras', 'Sujetos Excluidos', 'Gastos Nomina') THEN amount ELSE 0 END) AS gastos
             FROM pg.public.financial_records
             WHERE tenant_id = ? AND status = 'Valido'
+              AND (? IS NULL OR CAST(company_id AS VARCHAR) = ?)
             GROUP BY month_num, year_num
         ),
         current_year_cte AS (
@@ -477,7 +484,7 @@ def get_financial_trends(
         ORDER BY b.month_num;
     """
     try:
-        results = duck_con.execute(query, [tenant_id, year]).fetchall()
+        results = duck_con.execute(query, [tenant_id, company_id, company_id, year]).fetchall()
         
         months_es = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
         
@@ -509,6 +516,7 @@ def get_financial_trends(
 @cache_response(expire=3600)
 def get_types_breakdown(
     year: int = None,
+    company_id: Optional[str] = None,
     user_data: dict = Depends(require_cliente),
     duck_con = Depends(get_duckdb_client)
 ):
@@ -522,6 +530,7 @@ def get_types_breakdown(
             FROM pg.public.financial_records
             WHERE tenant_id = ? AND status = 'Valido'
               AND (?::int IS NULL OR EXTRACT('year' FROM transaction_date) = ?::int)
+              AND (? IS NULL OR CAST(company_id AS VARCHAR) = ?)
         )
         SELECT 
             transaction_type, 
@@ -530,11 +539,12 @@ def get_types_breakdown(
         FROM pg.public.financial_records
         WHERE tenant_id = ? AND status = 'Valido'
           AND date_trunc('month', transaction_date) = (SELECT max_month FROM latest_month)
+          AND (? IS NULL OR CAST(company_id AS VARCHAR) = ?)
         GROUP BY transaction_type, document_type
         ORDER BY total DESC;
     """
     try:
-        results = duck_con.execute(query, [tenant_id, year, year, tenant_id]).fetchall()
+        results = duck_con.execute(query, [tenant_id, year, year, company_id, company_id, tenant_id, company_id, company_id]).fetchall()
         
         ventas_data = []
         gastos_data = []

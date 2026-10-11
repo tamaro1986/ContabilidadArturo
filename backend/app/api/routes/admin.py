@@ -608,3 +608,183 @@ def delete_user(
             raise HTTPException(status_code=400, detail=f"Error al eliminar usuario: {str(e)}")
 
     raise HTTPException(status_code=500, detail="Base de datos no disponible.")
+
+
+# ------------------------------------------------------------------------------
+# AUDITORÍA DE EMPRESAS Y TRAZABILIDAD GLOBAL
+# ------------------------------------------------------------------------------
+
+class AdminCompanyResponse(BaseModel):
+    id: str
+    tenant_id: str
+    tenant_name: Optional[str] = None
+    user_id: Optional[str] = None
+    user_email: Optional[str] = None
+    name: str
+    nit: str
+    total_records: int = 0
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
+class AdminStatsResponse(BaseModel):
+    total_users: int = 0
+    total_contadores: int = 0
+    total_clientes: int = 0
+    total_admins: int = 0
+    total_companies: int = 0
+    total_uploads: int = 0
+    total_records: int = 0
+
+
+class AdminUploadAuditResponse(BaseModel):
+    id: str
+    tenant_id: str
+    company_name: Optional[str] = None
+    document_type: str
+    filename: str
+    status: str
+    records_processed: int = 0
+    error_message: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+
+@router.get("/companies", response_model=List[AdminCompanyResponse], dependencies=[Depends(require_admin)])
+def list_admin_companies():
+    conn = get_pg_conn()
+    if conn:
+        try:
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT 
+                    c.id, c.tenant_id, t.name as tenant_name, c.user_id, p.email as user_email,
+                    c.name, c.nit,
+                    COALESCE((SELECT COUNT(*) FROM public.financial_records fr WHERE fr.company_id = c.id), 0) as total_records,
+                    c.created_at, c.updated_at
+                FROM public.companies c
+                LEFT JOIN public.tenants t ON t.id = c.tenant_id
+                LEFT JOIN public.user_profiles p ON p.id = c.user_id
+                ORDER BY c.name ASC;
+            """)
+            rows = cur.fetchall()
+            cur.close()
+            conn.close()
+            return [
+                {
+                    "id": str(r[0]),
+                    "tenant_id": str(r[1]),
+                    "tenant_name": r[2],
+                    "user_id": str(r[3]) if r[3] else None,
+                    "user_email": r[4],
+                    "name": r[5],
+                    "nit": r[6],
+                    "total_records": int(r[7] or 0),
+                    "created_at": r[8],
+                    "updated_at": r[9],
+                }
+                for r in rows
+            ]
+        except Exception as e:
+            conn.close()
+            logger.warning(f"Error list_admin_companies en Postgres: {e}")
+            return []
+    return []
+
+
+@router.get("/stats", response_model=AdminStatsResponse, dependencies=[Depends(require_admin)])
+def get_admin_stats():
+    conn = get_pg_conn()
+    if conn:
+        try:
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT
+                    COUNT(id) as total_users,
+                    COUNT(id) FILTER (WHERE role = 'contador') as total_contadores,
+                    COUNT(id) FILTER (WHERE role = 'cliente') as total_clientes,
+                    COUNT(id) FILTER (WHERE role = 'administrador') as total_admins
+                FROM public.user_profiles;
+            """)
+            u_row = cur.fetchone() or (0, 0, 0, 0)
+            
+            cur.execute("SELECT COUNT(id) FROM public.companies;")
+            c_row = cur.fetchone() or (0,)
+            
+            cur.execute("SELECT COUNT(id) FROM public.csv_upload_history;")
+            up_row = cur.fetchone() or (0,)
+            
+            cur.execute("SELECT COUNT(id) FROM public.financial_records;")
+            r_row = cur.fetchone() or (0,)
+            
+            cur.close()
+            conn.close()
+            return {
+                "total_users": int(u_row[0] or 0),
+                "total_contadores": int(u_row[1] or 0),
+                "total_clientes": int(u_row[2] or 0),
+                "total_admins": int(u_row[3] or 0),
+                "total_companies": int(c_row[0] or 0),
+                "total_uploads": int(up_row[0] or 0),
+                "total_records": int(r_row[0] or 0),
+            }
+        except Exception as e:
+            conn.close()
+            logger.warning(f"Error get_admin_stats en Postgres: {e}")
+            return {
+                "total_users": 0,
+                "total_contadores": 0,
+                "total_clientes": 0,
+                "total_admins": 0,
+                "total_companies": 0,
+                "total_uploads": 0,
+                "total_records": 0,
+            }
+    return {
+        "total_users": 0,
+        "total_contadores": 0,
+        "total_clientes": 0,
+        "total_admins": 0,
+        "total_companies": 0,
+        "total_uploads": 0,
+        "total_records": 0,
+    }
+
+
+@router.get("/uploads", response_model=List[AdminUploadAuditResponse], dependencies=[Depends(require_admin)])
+def list_admin_uploads():
+    conn = get_pg_conn()
+    if conn:
+        try:
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT 
+                    h.id, h.tenant_id, c.name as company_name, h.document_type,
+                    h.filename, h.status, h.records_processed, h.error_message, h.created_at
+                FROM public.csv_upload_history h
+                LEFT JOIN public.companies c ON c.id = h.company_id
+                ORDER BY h.created_at DESC
+                LIMIT 100;
+            """)
+            rows = cur.fetchall()
+            cur.close()
+            conn.close()
+            return [
+                {
+                    "id": str(r[0]),
+                    "tenant_id": str(r[1]),
+                    "company_name": r[2],
+                    "document_type": r[3],
+                    "filename": r[4],
+                    "status": r[5],
+                    "records_processed": int(r[6] or 0),
+                    "error_message": r[7],
+                    "created_at": r[8],
+                }
+                for r in rows
+            ]
+        except Exception as e:
+            conn.close()
+            logger.warning(f"Error list_admin_uploads en Postgres: {e}")
+            return []
+    return []
+
