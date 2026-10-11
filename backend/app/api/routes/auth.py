@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 import jwt
 import psycopg2
 import psycopg2.extras
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from supabase import Client
 from app.schemas.auth import (
     UserLogin, UserRegister, Token, UserResponse, UserInvite, 
@@ -35,10 +35,25 @@ def create_jwt_token(user_id: str, email: str, role: str, tenant_id: str) -> str
 @router.post("/invite")
 def invite_user(
     invite_in: UserInvite,
+    request: Request,
     current_user = Depends(get_current_user),
     supabase: Client = Depends(get_supabase_client),
     admin_supabase: Client = Depends(get_supabase_admin_client)
 ):
+    # Resolver URL de login dinámica (basada en el dominio que hace la petición)
+    origin = request.headers.get("origin") or request.headers.get("referer")
+    if origin:
+        from urllib.parse import urlparse
+        parsed = urlparse(origin)
+        if parsed.scheme and parsed.netloc:
+            resolved_login_url = f"{parsed.scheme}://{parsed.netloc}/login"
+        else:
+            resolved_login_url = f"{settings.FRONTEND_URL}/login"
+    elif settings.FRONTEND_URL and "localhost" not in settings.FRONTEND_URL:
+        resolved_login_url = f"{settings.FRONTEND_URL.rstrip('/')}/login"
+    else:
+        resolved_login_url = "https://contabilidad.51-161-114-131.sslip.io/login"
+
     if settings.MOCK_MODE:
         temp_pw = invite_in.temp_password or "Integrum#2026"
         return {
@@ -47,7 +62,7 @@ def invite_user(
             "full_name": invite_in.full_name,
             "role": invite_in.role,
             "temp_password": temp_pw,
-            "login_url": f"{settings.FRONTEND_URL}/login"
+            "login_url": resolved_login_url
         }
 
     valid_roles = ["contador", "cliente"]
@@ -118,14 +133,13 @@ def invite_user(
             cur.close()
             conn.close()
 
-            login_url = f"{settings.FRONTEND_URL}/login"
             return {
                 "message": "Usuario registrado exitosamente con clave temporal.",
                 "email": invite_in.email,
                 "full_name": invite_in.full_name,
                 "role": invite_in.role,
                 "temp_password": temp_password,
-                "login_url": login_url
+                "login_url": resolved_login_url
             }
         except HTTPException:
             raise

@@ -44,12 +44,19 @@ export default function UserInvitationForm() {
                 throw new Error(data.detail || "Error al procesar la invitación");
             }
 
+            const currentOrigin = typeof window !== "undefined" && window.location.origin ? window.location.origin : "";
+            const computedLoginUrl = currentOrigin
+                ? `${currentOrigin}/login`
+                : (data.login_url && !data.login_url.includes("localhost")
+                    ? data.login_url
+                    : "https://contabilidad.51-161-114-131.sslip.io/login");
+
             setSuccessData({
                 email: data.email,
                 full_name: data.full_name,
                 role: data.role,
                 temp_password: data.temp_password,
-                login_url: data.login_url || "https://contabilidad.51-161-114-131.sslip.io/login",
+                login_url: computedLoginUrl,
             });
 
             setEmail("");
