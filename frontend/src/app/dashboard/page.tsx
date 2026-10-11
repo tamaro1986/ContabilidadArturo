@@ -396,7 +396,13 @@ export default function DashboardPage() {
                                         {userProfile?.full_name && userProfile.full_name !== 'Admin Seed' ? userProfile.full_name : (session?.user?.user_metadata?.name || "Garcia Integrum")}
                                         </p>
                                         <p className="text-[10px] font-black text-zinc-400 uppercase tracking-tighter mt-1">
-                                            {isAdmin ? "Administrador Global" : userProfile?.role || "Consultando..."}
+                                            {userProfile?.role === "administrador"
+                                                ? "Administrador Global"
+                                                : userProfile?.role === "contador"
+                                                ? "Contador"
+                                                : userProfile?.role === "cliente"
+                                                ? "Cliente"
+                                                : (isAdmin ? "Administrador Global" : userProfile?.role || "Consultando...")}
                                         </p>
                                     </div>
                                     <div className="w-10 h-10 rounded-xl bg-linear-to-br from-emerald-400 to-emerald-600 flex items-center justify-center text-white shadow-lg shadow-emerald-500/20 group-hover:scale-105 transition-transform">

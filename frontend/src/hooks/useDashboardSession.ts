@@ -45,8 +45,6 @@ export function useDashboardSession() {
         }
 
         if (meData && !cancelled) {
-          const isMasterAdmin =
-            meData.email?.toLowerCase() === "garcia.integrum1@gmail.com";
           const localToken = typeof window !== "undefined" ? window.localStorage.getItem("access_token") : "";
           const mockSession = {
             access_token: localToken || "",
@@ -55,7 +53,7 @@ export function useDashboardSession() {
           } as Session;
 
           setSession(mockSession);
-          setIsAdmin(isMasterAdmin || meData.role === "administrador");
+          setIsAdmin(meData.role === "administrador");
           setUserProfile({
             id: String(meData.id),
             tenant_id: String(meData.tenant_id),
@@ -106,18 +104,13 @@ export function useDashboardSession() {
           return;
         }
 
-        const isMasterAdmin =
-          currentSession.user.email?.toLowerCase() ===
-          "garcia.integrum1@gmail.com";
         setSession(currentSession);
-        setIsAdmin(isMasterAdmin || profile?.role === "administrador");
+        setIsAdmin(profile?.role === "administrador");
 
         if (profileError || !profile) {
-          if (!isMasterAdmin) {
-            setError(
-              "Su perfil no ha sido inicializado correctamente. Contacte a soporte.",
-            );
-          }
+          setError(
+            "Su perfil no ha sido inicializado correctamente. Contacte a soporte.",
+          );
           return;
         }
 
