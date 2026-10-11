@@ -12,7 +12,12 @@ interface InviteResult {
     login_url: string;
 }
 
-export default function UserInvitationForm() {
+interface UserInvitationFormProps {
+    currentUserRole?: string;
+}
+
+export default function UserInvitationForm({ currentUserRole }: UserInvitationFormProps) {
+    const isContador = currentUserRole === "contador";
     const [email, setEmail] = useState("");
     const [fullName, setFullName] = useState("");
     const [role, setRole] = useState("cliente");
@@ -28,13 +33,15 @@ export default function UserInvitationForm() {
         setLoading(true);
         setError(null);
 
+        const targetRole = isContador ? "cliente" : role;
+
         try {
             const response = await fetchWithAuth("/auth/invite", {
                 method: "POST",
                 body: JSON.stringify({
                     email,
                     full_name: fullName,
-                    role,
+                    role: targetRole,
                     temp_password: autoPassword ? undefined : tempPassword,
                 }),
             });
@@ -94,7 +101,9 @@ export default function UserInvitationForm() {
             <div className="mb-8">
                 <h2 className="text-2xl font-black text-zinc-900 tracking-tight">Expandir Ecosistema</h2>
                 <p className="text-zinc-500 text-sm font-medium mt-1">
-                    Brinde acceso a sus clientes o contadores. Se generará una clave temporal que podrá compartirles directamente por WhatsApp o correo.
+                    {isContador
+                        ? "Brinde acceso exclusivo a sus clientes para consulta y visualización de su información tributaria y financiera."
+                        : "Brinde acceso a sus clientes o contadores. Se generará una clave temporal que podrá compartirles directamente por WhatsApp o correo."}
                 </p>
             </div>
 
@@ -175,15 +184,29 @@ export default function UserInvitationForm() {
                     </div>
 
                     <div className="space-y-2">
-                        <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest px-1">Rol de Acceso</label>
-                        <select 
-                            value={role}
-                            onChange={(e) => setRole(e.target.value)}
-                            className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all font-bold text-zinc-900"
-                        >
-                            <option value="cliente">Cliente (Solo Lectura / Reportes y Declaraciones)</option>
-                            <option value="contador">Contador (Gestión Total del Tenant)</option>
-                        </select>
+                        <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest px-1">
+                            {isContador ? "Rol de Acceso Asignado" : "Rol de Acceso"}
+                        </label>
+                        {isContador ? (
+                            <div className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3 text-sm font-bold text-zinc-800 flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                    <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                                    <span>Cliente (Solo Lectura / Reportes y Declaraciones)</span>
+                                </div>
+                                <span className="text-[10px] bg-emerald-100 text-emerald-800 font-black uppercase px-2.5 py-1 rounded-md tracking-wider">
+                                    Cliente
+                                </span>
+                            </div>
+                        ) : (
+                            <select 
+                                value={role}
+                                onChange={(e) => setRole(e.target.value)}
+                                className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all font-bold text-zinc-900"
+                            >
+                                <option value="cliente">Cliente (Solo Lectura / Reportes y Declaraciones)</option>
+                                <option value="contador">Contador (Gestión Total del Tenant)</option>
+                            </select>
+                        )}
                     </div>
 
                     <div className="p-4 bg-zinc-50 rounded-2xl border border-zinc-200 space-y-3">

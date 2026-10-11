@@ -85,11 +85,22 @@ def invite_user(
                 conn.close()
                 raise ApiException(status_code=403, code="FORBIDDEN", detail="No tiene permisos para realizar invitaciones.")
 
+            current_user_role = profile_row[0]
             tenant_id = profile_row[1]
             if not tenant_id:
                 cur.close()
                 conn.close()
                 raise ApiException(status_code=400, code="NO_TENANT", detail="El usuario no tiene una firma/tenant asociada.")
+
+            # Regla de negocio: El contador únicamente puede invitar clientes
+            if current_user_role == "contador" and invite_in.role != "cliente":
+                cur.close()
+                conn.close()
+                raise ApiException(
+                    status_code=403,
+                    code="FORBIDDEN_ROLE",
+                    detail="Como contador, únicamente tiene autorización para registrar e invitar usuarios con el rol de Cliente."
+                )
 
             # Verificar si el correo ya existe
             cur.execute("SELECT id FROM auth.users WHERE LOWER(email) = LOWER(%s);", (invite_in.email,))

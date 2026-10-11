@@ -895,7 +895,7 @@ export default function DashboardPage() {
                                     >
                                         ← Volver a Configuración
                                     </button>
-                                    <UserInvitationForm />
+                                    <UserInvitationForm currentUserRole={userProfile?.role} />
                                 </div>
                             )}
 
