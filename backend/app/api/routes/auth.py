@@ -66,7 +66,7 @@ def invite_user(
             "login_url": resolved_login_url
         }
 
-    valid_roles = ["contador", "cliente"]
+    valid_roles = ["administrador", "contador", "cliente"]
     if invite_in.role not in valid_roles:
         raise ApiException(status_code=400, code="INVALID_ROLE", detail="Rol inválido para invitación.")
 

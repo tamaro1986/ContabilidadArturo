@@ -1,4 +1,5 @@
 import logging
+import random
 import uuid
 from datetime import datetime
 from typing import List, Optional
@@ -268,14 +269,16 @@ class AdminUserResponse(BaseModel):
     tenant_name: Optional[str] = None
     is_active: bool = True
     created_at: Optional[datetime] = None
+    temp_password: Optional[str] = None
+    login_url: Optional[str] = None
 
 
 class AdminUserCreate(BaseModel):
     email: EmailStr
-    password: str
+    password: Optional[str] = None
     full_name: str
     role: str = "cliente"
-    tenant_id: str
+    tenant_id: Optional[str] = None
 
 
 class AdminUserRoleUpdate(BaseModel):
@@ -364,42 +367,81 @@ def create_admin_user(
             detail=f"Rol inválido. Roles permitidos: {', '.join(valid_roles)}"
         )
 
+    # Contraseña temporal automática si no se ingresó una válida
+    raw_password = (user_in.password or "").strip()
+    if not raw_password or len(raw_password) < 6:
+        raw_password = f"Integrum#{random.randint(1000, 9999)}"
+
+    # Enlace de login dinámico
+    login_url = (
+        f"{settings.FRONTEND_URL.rstrip('/')}/login"
+        if (settings.FRONTEND_URL and "localhost" not in settings.FRONTEND_URL)
+        else "https://contabilidad.51-161-114-131.sslip.io/login"
+    )
+
     conn = get_pg_conn()
     if conn:
         try:
             cur = conn.cursor()
-            cur.execute("SELECT id, name FROM public.tenants WHERE id = %s", (user_in.tenant_id,))
-            tenant_row = cur.fetchone()
-            if not tenant_row:
-                cur.close()
-                conn.close()
-                raise HTTPException(status_code=404, detail="La empresa/tenant especificada no existe.")
-            tenant_name = tenant_row[1]
+            # Resolver Tenant: Si no viene especificado, tomar el primero activo o por defecto
+            tenant_id = (user_in.tenant_id or "").strip()
+            if not tenant_id:
+                cur.execute("SELECT id, name FROM public.tenants ORDER BY created_at ASC LIMIT 1;")
+                t_row = cur.fetchone()
+                if not t_row:
+                    default_t_id = str(uuid.uuid4())
+                    cur.execute("INSERT INTO public.tenants (id, name) VALUES (%s, %s);", (default_t_id, "Integrum Firma Contable"))
+                    tenant_id, tenant_name = default_t_id, "Integrum Firma Contable"
+                else:
+                    tenant_id, tenant_name = str(t_row[0]), t_row[1]
+            else:
+                cur.execute("SELECT id, name FROM public.tenants WHERE id = %s", (tenant_id,))
+                tenant_row = cur.fetchone()
+                if not tenant_row:
+                    cur.close()
+                    conn.close()
+                    raise HTTPException(status_code=404, detail="La empresa/tenant especificada no existe.")
+                tenant_id, tenant_name = str(tenant_row[0]), tenant_row[1]
 
             # Verificar si email ya existe
             cur.execute("SELECT id FROM auth.users WHERE LOWER(email) = LOWER(%s)", (user_in.email,))
-            if cur.fetchone():
-                cur.close()
-                conn.close()
-                raise HTTPException(status_code=400, detail="Ya existe un usuario con este correo electrónico.")
+            existing_user = cur.fetchone()
 
-            user_id = str(uuid.uuid4())
-            cur.execute("""
-                INSERT INTO auth.users (
-                    id, email, encrypted_password, email_confirmed_at, raw_user_meta_data
-                ) VALUES (
-                    %s, %s, crypt(%s, gen_salt('bf')), NOW(), %s
-                );
-            """, (
-                user_id,
-                user_in.email,
-                user_in.password,
-                psycopg2.extras.Json({
-                    "full_name": user_in.full_name,
-                    "role": user_in.role,
-                    "tenant_id": user_in.tenant_id
-                })
-            ))
+            if existing_user:
+                user_id = str(existing_user[0])
+                cur.execute("""
+                    UPDATE auth.users
+                    SET encrypted_password = crypt(%s, gen_salt('bf')),
+                        raw_user_meta_data = %s,
+                        updated_at = NOW()
+                    WHERE id = %s;
+                """, (
+                    raw_password,
+                    psycopg2.extras.Json({
+                        "full_name": user_in.full_name,
+                        "role": user_in.role,
+                        "tenant_id": tenant_id
+                    }),
+                    user_id
+                ))
+            else:
+                user_id = str(uuid.uuid4())
+                cur.execute("""
+                    INSERT INTO auth.users (
+                        id, email, encrypted_password, email_confirmed_at, raw_user_meta_data
+                    ) VALUES (
+                        %s, %s, crypt(%s, gen_salt('bf')), NOW(), %s
+                    );
+                """, (
+                    user_id,
+                    user_in.email,
+                    raw_password,
+                    psycopg2.extras.Json({
+                        "full_name": user_in.full_name,
+                        "role": user_in.role,
+                        "tenant_id": tenant_id
+                    })
+                ))
 
             cur.execute("""
                 INSERT INTO public.user_profiles (id, email, full_name, role, tenant_id, is_active)
@@ -411,7 +453,7 @@ def create_admin_user(
                     tenant_id = EXCLUDED.tenant_id,
                     is_active = TRUE
                 RETURNING created_at;
-            """, (user_id, user_in.email, user_in.full_name, user_in.role, user_in.tenant_id))
+            """, (user_id, user_in.email, user_in.full_name, user_in.role, tenant_id))
             prof_row = cur.fetchone()
             created_at = prof_row[0] if prof_row else datetime.now()
             cur.close()
@@ -422,32 +464,45 @@ def create_admin_user(
                 "email": user_in.email,
                 "full_name": user_in.full_name,
                 "role": user_in.role,
-                "tenant_id": user_in.tenant_id,
+                "tenant_id": tenant_id,
                 "tenant_name": tenant_name,
                 "is_active": True,
                 "created_at": created_at,
+                "temp_password": raw_password,
+                "login_url": login_url,
             }
         except HTTPException:
             raise
         except Exception as e:
-            conn.close()
+            if conn:
+                conn.close()
             raise HTTPException(status_code=400, detail=f"Error al crear usuario: {str(e)}")
 
     if admin_supabase:
-        tenant_res = admin_supabase.table("tenants").select("id, name").eq("id", user_in.tenant_id).execute()
-        if not tenant_res.data:
-            raise HTTPException(status_code=404, detail="La empresa/tenant especificada no existe.")
-        tenant_name = tenant_res.data[0].get("name")
+        tenant_id = (user_in.tenant_id or "").strip()
+        if not tenant_id:
+            all_tenants = admin_supabase.table("tenants").select("id, name").order("created_at").limit(1).execute()
+            if all_tenants.data:
+                tenant_id = all_tenants.data[0]["id"]
+                tenant_name = all_tenants.data[0].get("name")
+            else:
+                tenant_id = str(uuid.uuid4())
+                tenant_name = "Integrum Firma Contable"
+        else:
+            tenant_res = admin_supabase.table("tenants").select("id, name").eq("id", tenant_id).execute()
+            if not tenant_res.data:
+                raise HTTPException(status_code=404, detail="La empresa/tenant especificada no existe.")
+            tenant_name = tenant_res.data[0].get("name")
 
         try:
             auth_res = admin_supabase.auth.admin.create_user({
                 "email": user_in.email,
-                "password": user_in.password,
+                "password": raw_password,
                 "email_confirm": True,
                 "user_metadata": {
                     "full_name": user_in.full_name,
                     "role": user_in.role,
-                    "tenant_id": user_in.tenant_id
+                    "tenant_id": tenant_id
                 }
             })
             if not auth_res.user:
@@ -459,7 +514,7 @@ def create_admin_user(
                 "email": user_in.email,
                 "full_name": user_in.full_name,
                 "role": user_in.role,
-                "tenant_id": user_in.tenant_id,
+                "tenant_id": tenant_id,
                 "is_active": True
             }, on_conflict="id").execute()
 
@@ -468,7 +523,7 @@ def create_admin_user(
                 "email": user_in.email,
                 "full_name": user_in.full_name,
                 "role": user_in.role,
-                "tenant_id": user_in.tenant_id,
+                "tenant_id": tenant_id,
                 "is_active": True,
                 "created_at": None
             }
@@ -481,7 +536,9 @@ def create_admin_user(
                 "tenant_id": str(created_data["tenant_id"]),
                 "tenant_name": tenant_name,
                 "is_active": created_data.get("is_active", True),
-                "created_at": created_data.get("created_at")
+                "created_at": created_data.get("created_at"),
+                "temp_password": raw_password,
+                "login_url": login_url,
             }
         except HTTPException:
             raise

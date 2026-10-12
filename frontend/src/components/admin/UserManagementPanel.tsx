@@ -3,7 +3,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { fetchWithAuth } from '@/lib/api';
 import { getErrorMessage } from '@/lib/errors';
-import { supabase } from '@/lib/supabaseClient';
 
 export interface AdminUser {
   id: string;
@@ -37,10 +36,21 @@ export default function UserManagementPanel() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newFullName, setNewFullName] = useState('');
   const [newEmail, setNewEmail] = useState('');
+  const [autoPassword, setAutoPassword] = useState(true);
   const [newPassword, setNewPassword] = useState('');
   const [newRole, setNewRole] = useState<'administrador' | 'contador' | 'cliente'>('contador');
   const [newTenantId, setNewTenantId] = useState('');
+  const [showAdvancedTenant, setShowAdvancedTenant] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [createdSuccess, setCreatedSuccess] = useState<{
+    full_name: string;
+    email: string;
+    role: string;
+    temp_password: string;
+    login_url: string;
+  } | null>(null);
+  const [copied, setCopied] = useState(false);
 
   // Confirmation modal for deletion
   const [userToDelete, setUserToDelete] = useState<AdminUser | null>(null);
@@ -86,39 +96,87 @@ export default function UserManagementPanel() {
     setTimeout(() => setActionSuccess(null), 4000);
   };
 
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
+    setCreatedSuccess(null);
+    setCreateError(null);
+    setNewFullName('');
+    setNewEmail('');
+    setNewPassword('');
+    setAutoPassword(true);
+    setNewRole('contador');
+    setShowAdvancedTenant(false);
+  };
+
+  const handleCopyWhatsApp = () => {
+    if (!createdSuccess) return;
+    const msg = `Hola ${createdSuccess.full_name}, te comparto tus credenciales de acceso a la plataforma Garcia Integrum:
+
+🔗 Enlace de acceso: ${createdSuccess.login_url}
+👤 Usuario: ${createdSuccess.email}
+🔑 Contraseña temporal: ${createdSuccess.temp_password}
+
+(Por favor ingresa y actualiza tu contraseña en tu primer acceso).`;
+
+    void navigator.clipboard.writeText(msg);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 3000);
+  };
+
   // Create User Handler
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newEmail || !newPassword || !newFullName || !newTenantId) return;
+    if (!newEmail || !newFullName) return;
+    if (!autoPassword && (!newPassword || newPassword.length < 6)) {
+      setCreateError('La contraseña manual debe contener al menos 6 caracteres.');
+      return;
+    }
 
     setIsSubmitting(true);
-    setError(null);
+    setCreateError(null);
     try {
+      const effectiveTenantId = newTenantId || (tenants.length > 0 ? tenants[0].id : undefined);
+
       const res = await fetchWithAuth('/admin/users', {
         method: 'POST',
         body: JSON.stringify({
-          email: newEmail,
-          password: newPassword,
-          full_name: newFullName,
+          email: newEmail.trim(),
+          password: autoPassword ? undefined : newPassword.trim(),
+          full_name: newFullName.trim(),
           role: newRole,
-          tenant_id: newTenantId
+          tenant_id: effectiveTenantId
         })
       });
 
+      const data = await res.json();
       if (!res.ok) {
-        const errData = await res.json();
-        throw new Error(errData.detail || 'Error al crear el usuario.');
+        const detailMsg = typeof data.detail === 'string'
+          ? data.detail
+          : (Array.isArray(data.detail) && data.detail[0]?.msg
+            ? String(data.detail[0].msg)
+            : (data.message || 'Error al procesar la creación del usuario.'));
+        throw new Error(detailMsg);
       }
 
+      const currentOrigin = typeof window !== 'undefined' && window.location.origin ? window.location.origin : '';
+      const loginUrl = currentOrigin
+        ? `${currentOrigin}/login`
+        : (data.login_url && !data.login_url.includes('localhost')
+          ? data.login_url
+          : 'https://contabilidad.51-161-114-131.sslip.io/login');
+
+      setCreatedSuccess({
+        full_name: data.full_name || newFullName,
+        email: data.email || newEmail,
+        role: data.role || newRole,
+        temp_password: data.temp_password || (autoPassword ? 'Integrum#2026' : newPassword),
+        login_url: loginUrl,
+      });
+
       showSuccessBanner(`Usuario "${newFullName}" creado exitosamente.`);
-      setIsModalOpen(false);
-      setNewFullName('');
-      setNewEmail('');
-      setNewPassword('');
-      setNewRole('contador');
       void loadData();
     } catch (err: unknown) {
-      alert(getErrorMessage(err, 'Error al crear usuario.'));
+      setCreateError(getErrorMessage(err, 'No fue posible registrar al usuario.'));
     } finally {
       setIsSubmitting(false);
     }
@@ -423,112 +481,229 @@ export default function UserManagementPanel() {
           <div className="bg-white rounded-[2.5rem] border border-zinc-200 p-8 md:p-10 max-w-lg w-full shadow-2xl space-y-6">
             <div className="flex items-center justify-between pb-4 border-b border-zinc-100">
               <div className="flex items-center gap-3">
-                <div className="w-2 h-6 bg-blue-600 rounded-full" />
+                <div className={`w-2.5 h-6 rounded-full ${createdSuccess ? 'bg-emerald-500' : 'bg-blue-600'}`} />
                 <h3 className="text-xl font-black text-zinc-900 tracking-tight uppercase">
-                  Registrar Nuevo Usuario
+                  {createdSuccess ? 'Acceso Generado' : 'Registrar Nuevo Usuario'}
                 </h3>
               </div>
               <button
-                onClick={() => setIsModalOpen(false)}
+                onClick={handleCloseModal}
                 className="text-zinc-400 hover:text-zinc-700 text-lg font-black cursor-pointer"
               >
                 ✕
               </button>
             </div>
 
-            <form onSubmit={handleCreateUser} className="space-y-4">
-              <div>
-                <label className="block text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-1.5">
-                  Nombre Completo
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={newFullName}
-                  onChange={(e) => setNewFullName(e.target.value)}
-                  placeholder="Ej: Lic. Carlos Mendoza"
-                  className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-2.5 text-sm font-bold text-zinc-900 outline-none focus:border-blue-500"
-                />
-              </div>
+            {createdSuccess ? (
+              <div className="space-y-6 animate-in fade-in duration-200">
+                <div className="p-6 bg-emerald-50 border border-emerald-200 rounded-3xl space-y-4">
+                  <div className="flex items-center gap-3 text-emerald-800">
+                    <span className="flex h-3 w-3 relative">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+                    </span>
+                    <h4 className="font-black text-sm uppercase tracking-wider">¡Usuario Creado Exitosamente!</h4>
+                  </div>
 
-              <div>
-                <label className="block text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-1.5">
-                  Correo Electrónico
-                </label>
-                <input
-                  type="email"
-                  required
-                  value={newEmail}
-                  onChange={(e) => setNewEmail(e.target.value)}
-                  placeholder="usuario@empresa.com"
-                  className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-2.5 text-sm font-bold text-zinc-900 outline-none focus:border-blue-500"
-                />
-              </div>
+                  <div className="bg-white p-5 rounded-2xl border border-emerald-100 space-y-3 text-xs">
+                    <div className="flex justify-between items-center py-1 border-b border-zinc-100">
+                      <span className="text-zinc-400 font-bold uppercase">Nombre:</span>
+                      <span className="font-black text-zinc-800">{createdSuccess.full_name}</span>
+                    </div>
+                    <div className="flex justify-between items-center py-1 border-b border-zinc-100">
+                      <span className="text-zinc-400 font-bold uppercase">Correo / Usuario:</span>
+                      <span className="font-mono font-bold text-zinc-800">{createdSuccess.email}</span>
+                    </div>
+                    <div className="flex justify-between items-center py-1 border-b border-zinc-100">
+                      <span className="text-zinc-400 font-bold uppercase">Rol Asignado:</span>
+                      <span className="font-black text-emerald-600 uppercase">{createdSuccess.role}</span>
+                    </div>
+                    <div className="flex justify-between items-center py-1 bg-emerald-50/50 p-2 rounded-lg">
+                      <span className="text-emerald-700 font-black uppercase">Clave Temporal:</span>
+                      <span className="font-mono font-black text-emerald-800 text-sm">{createdSuccess.temp_password}</span>
+                    </div>
+                  </div>
 
-              <div>
-                <label className="block text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-1.5">
-                  Contraseña Inicial
-                </label>
-                <input
-                  type="password"
-                  required
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  placeholder="••••••••••••"
-                  className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-2.5 text-sm font-bold text-zinc-900 outline-none focus:border-blue-500"
-                />
+                  <div className="pt-2 flex flex-col gap-3">
+                    <button
+                      type="button"
+                      onClick={handleCopyWhatsApp}
+                      className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs uppercase tracking-wider py-3.5 px-4 rounded-xl shadow-lg shadow-emerald-600/20 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>
+                      {copied ? "¡Mensaje Copiado al Portapapeles!" : "Copiar mensaje para WhatsApp"}
+                    </button>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCreatedSuccess(null);
+                          setNewFullName('');
+                          setNewEmail('');
+                          setNewPassword('');
+                        }}
+                        className="flex-1 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-bold text-xs py-2.5 px-4 rounded-xl transition-all cursor-pointer text-center"
+                      >
+                        Registrar otro
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleCloseModal}
+                        className="bg-zinc-200 hover:bg-zinc-300 text-zinc-800 font-bold text-xs py-2.5 px-5 rounded-xl transition-all cursor-pointer"
+                      >
+                        Cerrar
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </div>
-
-              <div className="grid grid-cols-2 gap-4">
+            ) : (
+              <form onSubmit={handleCreateUser} className="space-y-4">
                 <div>
                   <label className="block text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-1.5">
-                    Rol
+                    Nombre Completo
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={newFullName}
+                    onChange={(e) => setNewFullName(e.target.value)}
+                    placeholder="Ej: Lic. Carlos Mendoza"
+                    className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-2.5 text-sm font-bold text-zinc-900 outline-none focus:border-blue-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-1.5">
+                    Correo Electrónico
+                  </label>
+                  <input
+                    type="email"
+                    required
+                    value={newEmail}
+                    onChange={(e) => setNewEmail(e.target.value)}
+                    placeholder="usuario@empresa.com"
+                    className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-2.5 text-sm font-bold text-zinc-900 outline-none focus:border-blue-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-1.5">
+                    Rol en la Plataforma
                   </label>
                   <select
                     value={newRole}
                     onChange={(e) => setNewRole(e.target.value as 'administrador' | 'contador' | 'cliente')}
-                    className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-3 py-2.5 text-xs font-black uppercase text-zinc-800 outline-none focus:border-blue-500 cursor-pointer"
+                    className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-2.5 text-xs font-black uppercase text-zinc-800 outline-none focus:border-blue-500 cursor-pointer"
                   >
-                    <option value="contador">Contador</option>
-                    <option value="cliente">Cliente</option>
-                    <option value="administrador">Administrador</option>
+                    <option value="contador">Contador (Gestión total contable)</option>
+                    <option value="cliente">Cliente (Solo consulta y reportes)</option>
+                    <option value="administrador">Administrador (Acceso global)</option>
                   </select>
                 </div>
 
-                <div>
-                  <label className="block text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-1.5">
-                    Empresa / Tenant
-                  </label>
-                  <select
-                    value={newTenantId}
-                    onChange={(e) => setNewTenantId(e.target.value)}
-                    required
-                    className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-3 py-2.5 text-xs font-black uppercase text-zinc-800 outline-none focus:border-blue-500 cursor-pointer"
-                  >
-                    {tenants.map(t => (
-                      <option key={t.id} value={t.id}>{t.name}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
+                {/* Contraseña Temporal Automática */}
+                <div className="p-4 bg-zinc-50 rounded-2xl border border-zinc-200 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-zinc-700 cursor-pointer flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={autoPassword}
+                        onChange={(e) => setAutoPassword(e.target.checked)}
+                        className="rounded border-zinc-300 text-blue-600 focus:ring-blue-500 h-4 w-4"
+                      />
+                      Generar contraseña temporal automáticamente
+                    </label>
+                    <span className="text-[10px] font-mono text-zinc-400 uppercase">Ej: Integrum#9778</span>
+                  </div>
 
-              <div className="pt-4 flex items-center justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="px-5 py-2.5 rounded-xl font-black text-xs uppercase tracking-wider text-zinc-500 hover:bg-zinc-100 transition-colors cursor-pointer"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-black text-xs uppercase tracking-widest px-6 py-2.5 rounded-xl shadow-lg shadow-blue-600/20 transition-all cursor-pointer"
-                >
-                  {isSubmitting ? 'Creando...' : 'Crear Usuario'}
-                </button>
-              </div>
-            </form>
+                  {!autoPassword && (
+                    <div className="space-y-1 pt-1 animate-in fade-in duration-150">
+                      <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest px-1">
+                        Contraseña Personalizada (Mínimo 6 caracteres)
+                      </label>
+                      <input
+                        type="text"
+                        required={!autoPassword}
+                        minLength={6}
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        placeholder="Escribe una contraseña temporal..."
+                        className="w-full bg-white border border-zinc-300 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none font-mono font-bold text-zinc-900"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {/* Firma / Tenant transparente */}
+                <div className="pt-1">
+                  <div className="flex items-center justify-between text-[11px] text-zinc-500 bg-zinc-100/70 px-3.5 py-2 rounded-xl border border-zinc-200/60">
+                    <span className="flex items-center gap-1.5 font-bold text-zinc-600">
+                      🏢 Firma: <span className="text-blue-700 font-black">{tenants.find(t => t.id === newTenantId)?.name || 'Integrum Firma Contable'}</span>
+                    </span>
+                    {tenants.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => setShowAdvancedTenant(!showAdvancedTenant)}
+                        className="text-[10px] text-zinc-400 hover:text-zinc-700 underline font-bold cursor-pointer"
+                      >
+                        {showAdvancedTenant ? 'Ocultar' : 'Cambiar'}
+                      </button>
+                    )}
+                  </div>
+
+                  {showAdvancedTenant && tenants.length > 1 && (
+                    <div className="mt-2 pt-2 border-t border-zinc-100 animate-in fade-in duration-150">
+                      <label className="block text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-1">
+                        Seleccionar Firma / Tenant
+                      </label>
+                      <select
+                        value={newTenantId}
+                        onChange={(e) => setNewTenantId(e.target.value)}
+                        className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-3 py-2 text-xs font-bold text-zinc-800 outline-none"
+                      >
+                        {tenants.map(t => (
+                          <option key={t.id} value={t.id}>{t.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </div>
+
+                {createError && (
+                  <div className="p-3 rounded-xl text-xs font-bold bg-red-50 text-red-700 border border-red-200 animate-in fade-in duration-150">
+                    {createError}
+                  </div>
+                )}
+
+                <div className="pt-3 flex items-center justify-end gap-3">
+                  <button
+                    type="button"
+                    onClick={handleCloseModal}
+                    className="px-5 py-2.5 rounded-xl font-black text-xs uppercase tracking-wider text-zinc-500 hover:bg-zinc-100 transition-colors cursor-pointer"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-black text-xs uppercase tracking-widest px-6 py-3 rounded-xl shadow-lg shadow-blue-600/20 transition-all cursor-pointer flex items-center gap-2"
+                  >
+                    {isSubmitting ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        <span>Generando...</span>
+                      </>
+                    ) : (
+                      <>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="16" y1="11" x2="22" y2="11"/></svg>
+                        <span>Crear y Generar Acceso</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
         </div>
       )}
